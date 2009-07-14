@@ -1,0 +1,7 @@
+Makefile
+Makefile.old
+Perl6-Doc-*
+blib
+inc
+pm_to_blib
+META.yml

@@ -3,6 +3,8 @@ use strict;
 use warnings;
 our $VERSION = '0.40';
 
+=encoding UTF-8
+
 =head1 NAME
 
 Perl6::Doc - Perl 6 documentation

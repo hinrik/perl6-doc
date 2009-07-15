@@ -106,7 +106,7 @@ C<grok> is distributed under the terms of the Artistic License 2.0.
 For more details, see the full text of the license in the file F<LICENSE>
 that came with this distribution.
 
-=head2 SCRIBES
+=head2 Scribes
 
 These are the authors of the included docs, named in the order their work 
 was added. This list is not exhaustive.

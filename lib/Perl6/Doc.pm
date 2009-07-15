@@ -21,7 +21,7 @@ Currently included in this distribution:
 
 =head2 Design docs
 
-=head3 Apocalypses (outdated
+=head3 Apocalypses (outdated)
 
 Larry Wall started the Apocalypse (latin for revelation) series as a
 systematic way of answering the RFCs (Request For Comments) that
@@ -74,7 +74,7 @@ L<http://www.perl.com> and L<http://www.perl-magazin.de/>.
 
 =head1 HISTORY
 
-As of version 0.37, this distribution has been overhauled and is no longer
+As of version 0.40, this distribution has been overhauled and is no longer
 maintained by Herbert Breunung.
 
 =head1 PACKAGING

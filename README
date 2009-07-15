@@ -10,7 +10,7 @@ DESCRIPTION
     Currently included in this distribution:
 
   Design docs
-   Apocalypses (outdated
+   Apocalypses (outdated)
     Larry Wall started the Apocalypse (latin for revelation) series as a
     systematic way of answering the RFCs (Request For Comments) that started
     the design process for Perl 6. Each Apocalypse corresponds to a chapter
@@ -57,7 +57,7 @@ DESCRIPTION
     from <http://www.perl.com> and <http://www.perl-magazin.de/>.
 
 HISTORY
-    As of version 0.37, this distribution has been overhauled and is no
+    As of version 0.40, this distribution has been overhauled and is no
     longer maintained by Herbert Breunung.
 
 PACKAGING

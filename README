@@ -56,6 +56,11 @@ DESCRIPTION
     salt as they might not describe Perl 6 as it is now. They are mostly
     from <http://www.perl.com> and <http://www.perl-magazin.de/>.
 
+  Perl 6 Table Index
+    A Pod-ified version of
+    <http://www.perlfoundation.org/perl6/index.cgi?perl_table_index> is
+    included.
+
 HISTORY
     As of version 0.40, this distribution has been overhauled and is no
     longer maintained by Herbert Breunung.

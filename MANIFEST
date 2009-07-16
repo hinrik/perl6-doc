@@ -10,6 +10,7 @@ inc/Module/Install/Metadata.pm
 inc/Module/Install/Share.pm
 inc/Module/Install/Win32.pm
 inc/Module/Install/WriteAll.pm
+docs/table_index.pod
 docs/Magazine/M01-perl-6-announcement.pod
 docs/Magazine/M02-what-is-perl-6.pod
 docs/Magazine/M03-pugs-interview.pod

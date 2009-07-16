@@ -72,6 +72,11 @@ appeared in print during the design process. Take these with a grain of salt
 as they might not describe Perl 6 as it is now. They are mostly from
 L<http://www.perl.com> and L<http://www.perl-magazin.de/>.
 
+=head2 Perl 6 Table Index
+
+A Pod-ified version of L<http://www.perlfoundation.org/perl6/index.cgi?perl_table_index>
+is included.
+
 =head1 HISTORY
 
 As of version 0.40, this distribution has been overhauled and is no longer

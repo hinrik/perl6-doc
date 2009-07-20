@@ -115,13 +115,17 @@ Probably most amazing was that the Porters agreed to break backwards
 compatibility.  As Larry said on Wednesday, the language itself needs
 revision.  On Wednesday, Larry mentioned several small, specific changes:
 
-    * The C<system()> function will return true on success and false on failure.
+=over 2
 
-    * The C<localtime()> function will return the four-digit year.
+=item * The C<system()> function will return true on success and false on failure.
 
-    * The notion of "currently selected filehandle" will probably go away.
+=item * The C<localtime()> function will return the four-digit year.
 
-    * Typeglobs may be eliminated.
+=item * The notion of "currently selected filehandle" will probably go away.
+
+=item * Typeglobs may be eliminated.
+
+=back
 
 But these are just by way of example.  Larry said "We're really serious
 about reinventing everything that needs reinventing." Everything is up for

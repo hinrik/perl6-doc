@@ -1,5 +1,6 @@
 lib/Perl6/Doc.pm
 Changes
+t/01_compile.t
 inc/Module/Install.pm
 inc/Module/Install/Base.pm
 inc/Module/Install/Can.pm

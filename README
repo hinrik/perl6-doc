@@ -61,6 +61,9 @@ DESCRIPTION
     <http://www.perlfoundation.org/perl6/index.cgi?perl_table_index> is
     included.
 
+  Man pages
+    Currently included are draft versions of perlintro and perlsyn.
+
 HISTORY
     As of version 0.40, this distribution has been overhauled and is no
     longer maintained by Herbert Breunung.

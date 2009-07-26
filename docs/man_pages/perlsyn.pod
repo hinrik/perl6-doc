@@ -5,7 +5,7 @@ TODO: Maybe add sections on aliasing (C<:=>), gather/take, :10<number>,
 Q://, repeat { }, exceptions, try/CATCH, laziness
 
 =for NAME
-perlsyn - Perl syntax
+perlsyn - Perl 6 syntax
 X<syntax>
 
 =begin DESCRIPTION
@@ -49,7 +49,7 @@ uninitialized value whenever you treat C<undef> as a string or a number.
 Well, usually.  Boolean contexts, such as:
 
     my $a;
-    if ($a) {}
+    if $a { ... }
 
 are exempt from warnings (because they care about truth rather than
 definedness).  Operators such as C<++>, C<-->, C<+=>,
@@ -933,9 +933,9 @@ shell:
 =end DESCRIPTION
 
 =begin AUTHORS
-The Perl 5 documentation authors
-
 L<Hinrik Örn Sigurðsson|mailto:hinrik.sig@gmail.com> (Perl 6 port)
+
+The Perl 5 documentation authors
 =end AUTHORS
 
 =comment vim: filetype=perl6

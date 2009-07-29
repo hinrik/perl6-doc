@@ -201,7 +201,7 @@ You can do various useful things to arrays:
     my @backwards = @numbers.reverse;
 
 There are some special arrays too, such as C<@*ARGS> (the command line
-arguments to your script). These are document in L<doc:perlvar>.
+arguments to your script). These are documented in L<doc:perlvar>.
 
 There are also some shortcuts that make life easy. For example, these two
 statements do the same thing:
@@ -215,7 +215,7 @@ A hash represents a set of key/value pairs:
 
     my %fruit_color = "apple", "red", "banana", "yellow";
 
-You can use whitespace and the "=>"  operator to lay them out more nicely:
+You can use whitespace and the C«=>» operator to lay them out more nicely:
 
     my %fruit_color = 
         "apple"     => "red",

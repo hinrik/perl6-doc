@@ -834,6 +834,9 @@ C<eval{}> and die() for exception processing can also be a prudent approach.
 =head2 Pod: Embedded Documentation
 X<Pod> X<documentation>
 
+For now see Synopsis 26 for information on Pod.
+
+=begin comment
 Perl has a mechanism for intermixing documentation with source code.
 While it's expecting the beginning of a new statement, if the compiler
 encounters a line that begins with an equal sign and a word, like this
@@ -878,6 +881,7 @@ the compiler will become pickier.
 
 One may also use pod directives to quickly comment out a section
 of code.
+=end comment
 
 =head2 Plain Old Comments (Not!)
 X<comment> X<line> X<#> X<preprocessor> X<eval>

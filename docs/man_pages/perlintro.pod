@@ -624,7 +624,23 @@ Then use it like:
 
 For more information on writing subroutines, see L<doc:perlsub>.
 
-=comment TODO: =head2 OO Perl
+=head2 Object oriented Perl
+
+Creating objects in Perl is simple.
+
+    class Dog {
+        has $.color;
+        has $.tail;
+        has @.legs;
+        
+        method wag () {
+            # do something with $.tail
+        }
+    }
+
+Object orientation is mostly beyond the scope of this tutorial however. See
+L<doc:perlobj> for more.
+
 =comment TODO: =head2 Using Perl modules
 
 =end DESCRIPTION

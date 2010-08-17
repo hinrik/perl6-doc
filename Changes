@@ -1,3 +1,6 @@
+{{$NEXT}}
+    - Use Dist::Zilla
+
 0.45 Mon Aug 17 17:12:06 GMT 2009
     - Added perlobjintro and perlreintro
 

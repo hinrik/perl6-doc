@@ -1,7 +1,6 @@
 package Perl6::Doc;
 use strict;
 use warnings;
-our $VERSION = '0.45';
 
 =encoding UTF-8
 

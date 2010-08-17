@@ -1,8 +1,10 @@
 package Perl6::Doc;
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 
-=encoding UTF-8
+1;
+
+=encoding utf8
 
 =head1 NAME
 

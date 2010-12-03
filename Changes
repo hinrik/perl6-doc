@@ -1,4 +1,6 @@
 {{$NEXT}}
+
+0.46  Fri Dec 3 07:15:01 GMT 2010
     - Use Dist::Zilla
     - Fix Perl 6 tablet hyperlink link and some other stuff pointed out
       by Herbert Breunung

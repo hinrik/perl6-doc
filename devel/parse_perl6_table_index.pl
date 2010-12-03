@@ -80,7 +80,7 @@ POD
 	return $pod;
 }
 
-my $pod = _perl6_table_index_to_pod 'http://www.perlfoundation.org/perl6/index.cgi?perl_table_index';
+my $pod = _perl6_table_index_to_pod 'http://www.perlfoundation.org/perl6/index.cgi?perl_6_index_tablet';
 my $filename = 'perl6_table_index.pod';
 print "Writing to $filename\n";
 open FILE, ">$filename" or die "Cannot open $filename for writing\n";

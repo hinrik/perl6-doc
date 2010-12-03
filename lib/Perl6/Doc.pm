@@ -75,7 +75,7 @@ L<http://www.perl.com> and L<http://www.perl-magazin.de/>.
 
 =head2 Perl 6 Table Index
 
-A Pod-ified version of L<http://www.perlfoundation.org/perl6/index.cgi?perl_table_index>
+A Pod-ified version of L<http://www.perlfoundation.org/perl6/index.cgi?perl_6_index_tablet>
 is included.
 
 =head2 Man pages
@@ -85,7 +85,8 @@ Currently included are draft versions of F<perlintro> and F<perlsyn>.
 =head1 HISTORY
 
 As of version 0.40, this distribution has been overhauled and is no longer
-maintained by Herbert Breunung.
+maintained by Herbert Breunung, who originally took it over from ingy and
+audreyt.
 
 =head1 PACKAGING
 

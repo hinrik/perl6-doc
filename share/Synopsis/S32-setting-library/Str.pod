@@ -5,7 +5,7 @@
 
 DRAFT: Synopsis 32: Setting Library - Str
 
-=head1 AUTHORs
+=head1 AUTHORS
 
     Rod Adams <rod@rodadams.net>
     Larry Wall <larry@wall.org>
@@ -24,9 +24,10 @@ DRAFT: Synopsis 32: Setting Library - Str
 
 The document is a draft.
 
-If you read the HTML version, it is generated from the pod in the pugs
-repository under /docs/Perl6/Spec/S32-setting-library/Miscellaneous-scalars.pod
-so edit it there in the SVN repository if you would like to make changes.
+If you read the HTML version, it is generated from the Pod in the specs
+repository under
+L<https://github.com/perl6/specs/blob/master/S32-setting-library/Str.pod>
+so edit it there in the git repository if you would like to make changes.
 
 =head1 Str
 
@@ -38,7 +39,7 @@ declared the "working Unicode level to be". Default is C<Grapheme>.
 [Default can't be C<CharLingua> because we don't go into "language"
 mode unless there's a specific language declaration saying either
 exactly what language we're going into or, in the absence of that, how to
-find the exact language somewhere in the enviroment.]
+find the exact language somewhere in the environment.]
 
 Attempting to use a string at a level higher it can support is handled
 without warning. The current highest supported level of the string
@@ -186,19 +187,19 @@ desired normalization when transferred to lexical scopes or handles that care.
 Has the effect of making the case of the string match the case pattern in C<$pattern>.
 (Used by s:ii/// internally, see L<S05>.)
 
-=item sameaccent
+=item samemark
 
- our Str multi method sameaccent ( Str $string: Str $pattern ) is export
+ our Str multi method samemark ( Str $string: Str $pattern ) is export
 
-Has the effect of making the case of the string match the accent pattern in C<$pattern>.
-(Used by s:aa/// internally, see L<S05>.)
+Has the effect of making the case of the string match the marking pattern in C<$pattern>.
+(Used by s:mm/// internally, see L<S05>.)
 
 =item capitalize
 
  our Str multi method capitalize ( Str $string: ) is export
 
 Has the effect of first doing an C<lc> on the entire string, then performing a
-C<s:g/(\w+)/{ucfirst $1}/> on it.
+C<s:g/(\w+)/{ucfirst $0}/> on it.
 
 
 =item length
@@ -262,16 +263,14 @@ The value returned is always a C<StrPos> object.  If the substring
 is found, then the C<StrPos> represents the position of the first
 character of the substring. If the substring is not found, a bare
 C<StrPos> containing no position is returned.  This prototype C<StrPos>
-evaluates to false because it's really a kind of undef.  Do not evaluate
+evaluates to false because it's really a kind of undefined value.  Do not evaluate
 as a number, because instead of returning -1 it will return 0 and issue
 a warning.
 
 
 =item pack
 
- our Str multi pack( Str::Encoding $encoding,  Pair *@items )
- our Str multi pack( Str::Encoding $encoding,  Str $template, *@items )
- our buf8 multi pack( Pair *@items )
+ our buf8 multi pack( *@items where { all(@items) ~~ Pair } )
  our buf8 multi pack( Str $template, *@items )
 
 C<pack> takes a list of pairs and formats the values according to
@@ -280,26 +279,17 @@ C<$template> and formats the rest of its arguments according to
 the specifications in the template string. The result is a sequence
 of bytes.
 
-An optional C<$encoding> can be used to specify the character
-encoding to use in interpreting the result as a C<Str>, otherwise the return
-value will simply be a C<buf> containing the bytes generated
-by the template(s) and value(s). Note that no guarantee is made
-in terms of the final, internal representation of the string, only
-that the generated sequence of bytes will be interpreted as a
-string in the given encoding, and a string containing those
-graphemes will be returned. If the sequence of bytes represents
-an invalid string according to C<$encoding>, an exception is generated.
-
 Templates are strings of the form:
 
   grammar Str::PackTemplate {
-   regex template  { [ <group> | <specifier> <count>? ]* }
-   token group     { \( <template> \) }
-   token specifier { <[aAZbBhHcCsSiIlLnNvVqQjJfdFDpPuUwxX\@]> \!? }
-   token count     { \* |
-             \[ [ \d+ | <specifier> ] \] |
-             \d+ }
- }
+    regex TOP       { ^ <template> $ }
+    regex template  { [ <group> | <specifier> <count>? ]* }
+    token group     { \( <template> \) }
+    token specifier { <[aAZbBhHcCsSiIlLnNvVqQjJfdFDpPuUwxX\@]> \!? }
+    token count     { \*
+                    | \[ [ \d+ | <specifier> ] \]
+                    | \d+ }
+  }
 
 In the pairwise mode, each key must contain a single C<< <group> >> or
 C<< <specifier> >>, and the values must be either scalar arguments or
@@ -339,12 +329,12 @@ works backwards. See C<index> for more detail.
 =item split
 X<split>
 
- our List multi split ( Str $delimiter, Str $input, Int $limit = * )
- our List multi split ( Regex $delimiter, Str $input, Int $limit = * )
- our List multi method split ( Str $input: Str $delimiter, Int $limit = * )
- our List multi method split ( Str $input: Regex $delimiter, Int $limit = *, Bool :$all = False)
+ our List multi split ( Str $delimiter, Str $input, Int $limit = Inf )
+ our List multi split ( Regex $delimiter, Str $input, Int $limit = Inf )
+ our List multi method split ( Str $input: Str $delimiter, Int $limit = Inf )
+ our List multi method split ( Str $input: Regex $delimiter, Int $limit = Inf, Bool :$all = False)
 
-Splits a string up into pieces based on delimeters found in the string.
+Splits a string up into pieces based on delimiters found in the string.
 
 String delimiters must not be treated as rules but as constants.  The
 default is no longer S<' '> since that would be interpreted as a constant.
@@ -371,8 +361,8 @@ a C<Cat> is undefined.
 
 =item comb
 
- our List multi comb ( Regex $matcher, Str $input, Int $limit = * )
- our List multi method comb ( Str $input: Regex $matcher = /./, Int $limit = * )
+ our List multi comb ( Regex $matcher, Str $input, Int $limit = Inf )
+ our List multi method comb ( Str $input: Regex $matcher = /./, Int $limit = Inf )
 
 The C<comb> function looks through a string for the interesting bits,
 ignoring the parts that don't match.  In other words, it's a version
@@ -402,10 +392,16 @@ are never returned -- if you want that, use C<split :all>.  If the
 function is combing a lazy structure, the return values may also be
 lazy.  (Strings are not lazy, however.)
 
+=item lines
+
+ our List multi method lines ( Str $input: Int $limit = Inf ) is export
+
+Returns a list of lines, i.e. the same as a call to
+C<$input.comb( / ^^ \N* /, $limit )> would.
+
 =item words
 
- our List multi words ( Str $input, Int $limit = * )
- our List multi method words ( Str $input: Int $limit = * )
+ our List multi method words ( Str $input: Int $limit = Inf ) is export
 
 Returns a list of non-whitespace bits, i.e. the same as a call to
 C<$input.comb( / \S+ /, $limit )> would.
@@ -526,7 +522,7 @@ the list version C<@a.fmt($format, $sep)> returns the result of
 C<join $sep, map { sprintf($format, $_) }, @a>. A call to the hash version
 C<%h.fmt($format, $sep)> returns the result of
 C<join $sep, map { sprintf($format, $_.key, $_.value) }, %h.pairs>. A call
-to the pair versionC<$p.fmt($format)> returns the result of
+to the pair version C<$p.fmt($format)> returns the result of
 C<sprintf($format, $p.key, $p.value)>.
 
 =item substr
@@ -541,7 +537,7 @@ C<sprintf($format, $p.key, $p.value)>.
 C<substr> returns part of an existing string. You control what part by
 passing a starting position and optionally either an end position or length.
 If you pass a number as either the position or length, then it will be used
-as the start or length with the assumtion that you mean "chars" in the
+as the start or length with the assumption that you mean "chars" in the
 current Unicode abstraction level, which defaults to graphemes.  A number
 in the 3rd argument is interpreted as a length rather than a position (just
 as in Perl 5).
@@ -563,7 +559,7 @@ then the original string will be dynamically resized.
 
   multi method trim() is export;
 
-Returns a copy of the string, with leading and trailing whitespaces removed.
+Returns a copy of the string, with leading and trailing whitespace removed.
 
 =item unpack
 
@@ -583,12 +579,32 @@ See L<S05/Substitution>
 
  our multi trans(List of Pair %data);
 
+=item indent
+
+     our Str multi method indent ($str: $steps) is export;
+
+Returns a re-indented string wherein C<$steps> number of spaces have been added
+to each line (i.e. to the beginning of the string and after each logical
+newline).
+
+If C<$steps> is negative, removes that many spaces instead. Should any line
+contain too few leading spaces, only those are removed and a warning is issued.
+
+If C<$steps> is C<*>, removes exactly as many spaces as are needed to make at
+least one line have zero indentation.
+
+When removing indentation, the method will assume hard tabs to be
+C<< ($?TABSTOP // 8) >> spaces, and will treat other horizontal whitespace
+characters as synonymous to spaces. Characters not participating in the
+re-indenting will be left untouched, and those added in an indent call will
+be either (1) consistent with subsequent leading whitespace already on the
+line, if these are all the same, or (2) spaces. During an unindent, the
+trailing tab character in a chain of leading tab characters may explode
+into a number of space characters.
+
 =back
 
 =head1 Additions
 
 Please post errors and feedback to perl6-language.  If you are making
 a general laundry list, please separate messages by topic.
-
-
-

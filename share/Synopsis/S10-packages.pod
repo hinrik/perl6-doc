@@ -13,8 +13,8 @@ Synopsis 10: Packages
 
     Created: 27 Oct 2004
 
-    Last Modified: 13 Feb 2009
-    Version: 9
+    Last Modified: 9 Jul 2010
+    Version: 13
 
 =head1 Overview
 
@@ -85,6 +85,44 @@ with the
 syntax that lets you do a lookup in a particular symbol table.  In this case,
 the key is not parsed for C<::>.  It's just a hash lookup.
 
+All package bodies (including module and class bodies) execute at the
+normal execution time of the code in which they are embedded.  For normal
+mainline code, this is the normal flow of execution; if this is too late
+to initialize something in the package that you want to be initialized, consider
+use of a MAIN subroutine, which is invoked at the end of normal execution.
+See L<S06/Declaring a C<MAIN> subroutine>.
+
+For packages (modules, classes, roles, etc.) defined in separate files
+from the mainline code, there can be no mainline code by definition,
+but the top-level code in the used module needs to be executed at
+some point in case things need initialization.  Invocation of this
+pseudo-mainline code in the module notionally happens no later than at
+the point of the C<use> or C<need> call in the process of compilation,
+but the module's code is assumed to be sufficiently uninteresting that
+it need be executed only once regardless of how many times the module
+is used subsequently in the compilation.  (In fact, it might not need
+to run at all if the result of some previous compilation's run has
+been cached.)
+
+If it is desired to have code that varies in meaning from run to run,
+then you should put such code into an INIT block.  (Likewise, you
+could put code into a CHECK block that has inconsistent semantics
+from compilation to compilation, but that's probably a bad idea.)
+
+In any case, it is erroneous for any external module to depend
+on any knowledge of its user with respect to compilation order or
+other dynamic information, since other users may also depend on
+this single "first-use" execution and expect consistent semantics.
+(Really, all such dynamic dependencies should be passed in at run
+time to the routines or methods of your module as normal parameters or
+as dynamic variables.  For instance, you cannot know at module compile
+time whether your caller is going to be using 'fatal' semantics or not.
+That is dynamically scoped info.)
+
+If you wish to have a module that does something extra if invoked
+standalone, define a MAIN subroutine, which will be ignored if
+the module is merely used/needed elsewhere.
+
 =head1 Package nesting
 
 A declaration of any object of the form C<A::B::c> also creates (if needed)
@@ -109,7 +147,7 @@ in the C<GLOBAL::> namespace.
 The C<PROCESS::> namespace, shared by all interpreters within the process,
 is notionally outside of C<GLOBAL::>, but package searches do not look
 there for anything.  (Contextual variable searches do; C<$*PID> will eventually
-locate C<$PROCESS::PID> if not hidden by an inner context's C<$PID>.)
+locate C<$PROCESS::PID> if not hidden by an inner callframe's C<$*PID>.)
 
 =head1 Autoloading
 
@@ -154,9 +192,9 @@ parameter is reserved for such purposes.
 
 The C<CANDO> is expected to return an inner container object of
 the proper sort (i.e. a variable, subroutine, or method object),
-or a proxy object that can "autovivify" lazily, or C<undef> if that
+or a proxy object that can "autovivify" lazily, or C<Nil> if that
 name is not to be considered declared in the namespace in question.
-(Only bare C<undef> is interpreted as "not there", since typed undefs
+(Only bare C<Nil> is interpreted as "not there", since typed undefs
 may function as autovivifiable proxy objects.  See S12.)
 
 The declaration merely defines the interface to the new object.  That object
@@ -177,6 +215,35 @@ real methods or submethods:
 
 The method form is inherited by subclasses.  Submethods are never
 inherited but may still do MMD within the class.   (Ordinary multisubs
-are inherited only to the extent allowed by the MMD mechanism.)
+are "inherited" only to the extent allowed by nested lexical scopes.)
+
+When the package in question is not a class, there is a slight problem
+insofar as Perl 6 doesn't by default look into packages for functions
+anymore, only lexical scopes.  However, we'd still like the ability
+to dynamic add functions to a package, so there are two ways to get
+around the lexical limitation.
+
+First, presuming you have a C<CANDO> that adds to your current package,
+you can simply call a newly-minted subroutine explicitly via the
+current package:
+
+    OUR::($somename)();
+
+This bypasses the lexical namespaces entirely.  Alternately, we can set
+up a mechanism whereby, if you import or define a C<CANDO> into a given
+lexical scope, all calls from within that scope register a failover that
+adds the current package to the list of places to look for subroutines (or,
+obviously, call the C<CANDO> as a last resort after that).  There is no
+performance impact on existing lexically scoped definitions, including those
+from C<CORE>.  This approach does require that failure to find a function name
+cannot be reported at compile time, but must be delayed till run time instead.
+Another potential disadvantage is that the package's symbols are also shadowed
+by all symbols defined in your outer lexical scopes, including C<CORE>.
+If this is a problem, use the direct C<OUR> call above.
+
+Another way to look at it is that a lexical C<CANDO> adds itself to
+the end of the function dispatcher's search, but sets up the current
+package as a kind of cache for newly-defined functions just ahead of itself
+in the search path.
 
 =for vim:set expandtab sw=4:

@@ -3,7 +3,7 @@
 
 =head1 TITLE
 
-DRAFT: Synopsis 32: Setting Library - Executeable
+DRAFT: Synopsis 32: Setting Library - Callable
 
 =head1 AUTHORS
 
@@ -19,9 +19,10 @@ DRAFT: Synopsis 32: Setting Library - Executeable
 
 The document is a draft.
 
-If you read the HTML version, it is generated from the pod in the pugs
-repository under /docs/Perl6/Spec/S32-setting-library/Exception.pod so edit it there in
-the SVN repository if you would like to make changes.
+If you read the HTML version, it is generated from the Pod in the specs
+repository under
+L<https://github.com/perl6/specs/blob/master/S32-setting-library/Callable.pod>
+so edit it there in the git repository if you would like to make changes.
 
 This document documents Code, Block, Signature, Capture, Routine, Sub, Method, Submethod,
 and Macro.
@@ -90,6 +91,8 @@ appropriate symbol table.
       method Bool       multi() {...}
  }
 
+=over
+
 =item unwrap
 
 See L<S06/Wrapping>.
@@ -99,6 +102,8 @@ See L<S06/Wrapping>.
  method wrap(Code $code) {...}
 
 See L<S06/Wrapping>.
+
+=back
 
 =head2 Sub
 

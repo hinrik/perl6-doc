@@ -1,4 +1,4 @@
-
+﻿
 =encoding utf8
 
 =head1 TITLE
@@ -22,14 +22,15 @@ DRAFT: Synopsis 32: Setting Library - IO
 
     Created: 19 Feb 2009 extracted from S29-functions.pod; added stuff from S16-IO later
 
-    Last Modified: 20 Apr 2009
-    Version: 6
+    Last Modified: 4 July 2010
+    Version: 13
 
 The document is a draft.
 
-If you read the HTML version, it is generated from the pod in the pugs
-repository under /docs/Perl6/Spec/S32-setting-library/IO.pod so edit it there in
-the SVN repository if you would like to make changes.
+If you read the HTML version, it is generated from the Pod in the specs
+repository under
+L<https://github.com/perl6/specs/blob/master/S32-setting-library/IO.pod>
+so edit it there in the git repository if you would like to make changes.
 
 =head2 IO
 
@@ -63,6 +64,16 @@ than C<Str> types.
 
 TODO: document read/write/append modes (:r, :w, :a)
 
+=item dir
+X<dir>
+
+    multi dir($directory = '.', Mu :$test = none('.', '..')) { ... }
+
+Returns a lazy list of file names in the C<$directory>. By default the current
+and the parent directory are excluded, which can be controlled with the
+C<$test> named paramater. Only items that smart-match against this test are
+returned.
+
 =item getc
 X<getc>
 
@@ -92,6 +103,13 @@ X<say>
 
 See below for details.
 
+=item note
+X<note>
+
+    multi note (*@LIST --> Bool)
+
+See below for details.
+
 =item printf
 X<printf>
 
@@ -117,7 +135,7 @@ passed in.  Here are some example mappings:
 
 These can naturally be overridden or added to by other modules.
 
-=item %*PROTOCOLS context variable
+=item %*PROTOCOLS dynamic variable
 
 For each protocol, stores a type name that should be instantiated by calling the C<uri>
 constructor on that type, and passing in the appropriate uri.
@@ -140,7 +158,7 @@ This role provides unbuffered read access to the data stream.
 
     role IO::Readable {
         has $.isReadable;
-        method read($buf is rw, Int $bytes --> Int)
+        method read(Int $bytes --> Buf)
     }
 
 When the C<$.isReadable> is set, it tries to change the readability of the filehandle.  This
@@ -149,16 +167,14 @@ readability by calling C<shutdown>, for example.
 
 =over
 
-=item method read($buf is rw, Int $bytes --> Int)
+=item method read(Int $bytes --> Buf)
 
-Tries to read C<$bytes> bytes and store in C<$buf>. The contents of C<$buf>
-are replaced and the actual number of bytes read is returned. A return
-of 0 means end of file. It might return unthrown failures, to be
-specified by each C<IO> implementation.
+Tries to read C<$bytes> bytes and return it as a C<Buf>. The C<Buf> may be
+shorter than the actual specified number of C<$bytes>.
 
-It is important to realize that this is "raw" read. You're going to
-have plain octets stored in C<$buf>, if this is actually encoded data,
-you're going to need to encode it later, or use "getc" or other
+This is "raw" read. You're going to
+have plain octets stored in C<$buf>. If what you want is a C<Str>,
+you're going to need to C<.decode> it after C<read>ing, or use "getc" or other
 C<IO::Readable::Encoded> methods.
 
 =back
@@ -169,7 +185,7 @@ This role provides unbuffered write access to the data stream.
 
     role IO::Writeable {
         has $.isWriteable;
-        method write($buf, Int $bytes --> Int)
+        method write(Buf $buf --> Int)
     }
 
 When the C<$.isWriteable> is set, it tries to change the writeability of the filehandle.
@@ -178,15 +194,14 @@ writeability by calling shutdown(), for example.
 
 =over
 
-=item method write($buf, Int $bytes --> Int)
+=item method write(Buf $buf --> Int)
 
-Tries to write C<$bytes> bytes of C<$buf>. The actual number of bytes
+Tries to write C<$buf>. The actual number of bytes
 written is returned. It might return unthrown failures, to be
 specified by each C<IO> implementation.
 
-It is important to realize that this is "raw" write. C<$buf> should
-contain plain octets that are going to be sent. If C<$buf> contains
-encoded data, you should decode it first, or use "print" or other
+This is "raw" write. C<$buf> contains plain octets. If you want to C<write>
+a C<Str>, you should C<.encode> it first, or use "print" or other
 C<IO::Writeable::Encoded> methods.
 
 =back
@@ -200,8 +215,8 @@ C<IO::Writeable::Encoded> methods.
 EOI = End Of Input -- equivalent to End Of File, but applies to other kinds of sockets as
 well.
 
-Returns true if it's the end of the input (ie. end of file or whatever), returns false if
-not, returns undef if we can't say for certain.
+Returns true if it's the end of the input (i.e. end of file or whatever), returns false if
+not, fails if we can't say for certain.
 
 =item method seek(Int $position --> Bool)
 
@@ -271,7 +286,7 @@ If blocking is passed in, .blocking() is called (see below).
 =item method blocking( --> Bool) is rw
 
 This allows the user to control whether this object should do a
-blocking wait or immediatly return in the case of not having data
+blocking wait or immediately return in the case of not having data
 available.
 
 =item uri
@@ -321,7 +336,7 @@ Works like awk's RS variable, including treating empty lines
 as a terminator if set to the null string.
 (An empty line cannot contain any spaces or tabs.)
 You may set it to a multi-character string to match a multi-character
-terminator, or to undef to read through the end of file.
+terminator, or to Nil to read through the end of file.
 Setting it to "\n\n" means something slightly different
 than setting to "", if the file contains consecutive empty lines.
 Setting to "" will treat two or more consecutive empty lines
@@ -422,9 +437,14 @@ Stringifies each element, concatenates those strings, and sends the
 result to the output.
 Returns C<Bool::True> if successful, C<Failure> otherwise.
 
-It is a compiler error to use a bare C<print> without arguments.
+The compiler will warn you if use a bare C<print> without arguments.
 (However, it's fine if you have an explicit argument list that evaluates to
 the empty list at runtime.)
+
+    print;             # warns
+    if $_ { print }    # warns
+    if $_ { print() }  # ok, but does nothing
+    if $_ { print () } # ok, but does nothing
 
 =item method say (*@LIST --> Bool)
 
@@ -436,8 +456,18 @@ the final argument.
     Was:    print "Hello, world!\n";
     Now:    say   "Hello, world!";
 
-As with C<print>, it is a compiler error to use a bare C<say> without
+As with C<print>, the compiler will warn you if you use a bare C<say> without
 arguments.
+
+=item multi note (*@LIST --> Bool)
+
+Does a "say" to C<$*ERR>, more or less.  Like C<warn>, it adds a
+newline only if the message does not already end in newline.  Unlike
+C<warn>, it is not trappable as a resumable exception because it
+outputs directly to C<$*ERR>.  You can suppress notes in a lexical
+scope by declaring:
+
+    only note(*@) {}
 
 =item method printf ($self: Str $fmt, *@LIST --> Bool)
 
@@ -528,7 +558,7 @@ Implements the close() function from IO::Closeable by doing a shutdown on the co
 
 =item shutdown
 
-    method shutdown(Array of Str @how)
+    method shutdown(Str @how)
 
 Does a I<shutdown(2)> on the connection.  See also IO::Readable.isReadable and
 IO::Writeable.isWriteable.
@@ -541,11 +571,11 @@ $how can contain 1 or more of the strings 'Readable' and 'Writeable'.
 
 =item method read($buf is rw, Int $bytes --> Int)
 
-Implementes the IO::Readable interface by doing a I<recv(2)>.
+Implements the IO::Readable interface by doing a I<recv(2)>.
 
 =item method write($buf, Int $bytes --> Int)
 
-Implementes the IO::Writeable interface by doing  a I<send(2)>.
+Implements the IO::Writeable interface by doing  a I<send(2)>.
 
 =item getpeername
 
@@ -579,32 +609,30 @@ This does file input and output.
 =item new
 
     method new(
-        FSNode :$FSNode,
-        Str :$Filename,
+        Path :$Path,
         :$fd
         Bool :$NoOpen,
         :$Writeable,
         :$Readable
     );
 
-The C<FSNode>, C<Filename> and C<fd> options are mutually exclusive.  If "C<use portable>" is in
-effect, the C<Filename> option throws an error; use an C<FSNode> instead.
+The C<Path> and C<fd> options are mutually exclusive.  
 
 C<NoOpen> is passed to C<IO::Streamable.new()>
 
 Examples:
 
-    # Read -- throws errors with 'use portable'
-    $fobj = new IO::File(Filename => $filename);
+    # Read, no interpolation
+    $fobj = IO::File.new(Path => qp{/path/to/file});
 
-    # Write -- works with 'use portable'
-    $fobj = new IO::File(
-        FSNode => IO::FSNode.new(type => 'Unix', Filename => $filename),
+    # Write, interpolation
+    $fobj = IO::File.new(
+        Path => p:qq{$filename},
         Writeable => 1
     );
 
     # Read using file descriptor
-    $fobj = new IO::File(fd => $fd);
+    $fobj = IO::File.new(fd => $fd);
 
 This final example associates an C<IO> object with an already-open file descriptor,
 presumably passed in from the parent process.
@@ -621,137 +649,181 @@ Available only as a handle method.
 
 =back
 
-=head2 IO::FileSystem
+=head2 IO::Directory
 
-This represents the filesystem.
+    role IO::Directory does IO::Streamable {
+        ...
+    }
 
-    class IO::FileSystem does IO::Streamable {
-        has Str $.fstype; # ext3, ntfs, vfat, reiserfs, etc
-        has Str $.illegal-chars; # ie. /\x0
+=over
+
+=item open
+
+    $dir.open(
+        Str  :$enc = "Unicode",
+    );
+
+Opens a directory for processing, if the C<new> method was passed the C<NoOpen> option.
+Makes the directory looks like
+a list of autochomped lines, so just use ordinary C<IO> operators after the open.
+
+=back
+
+=head2 IO::FileSystems
+
+This represents the file systems mounted on the current machine (i.e. accessible via a 
+filesystem path).  
+
+    class IO::FileSystems {
+        has Str $.illegal-chars; # i.e. /\x0
         has Int $.max-path;
+        has Int $.max-path-element;
     ...
     }
 
 =over 4
 
-=item glob
+=item chdir FILENAME
+X<chdir> X<cd>
 
-Returns C<FSNode> objects.
+=item chdir
+
+Changes the current working directory to the one specified by FILENAME.
+If it succeeds it returns true, otherwise it returns C<Failure> and
+sets C<$!> (errno).  Note, though, that chdir affects only the system 
+directory; most things in Perl 6 that need a current directory depend
+on their thread's copy of $*CWD, so you probably want to set $*CWD
+instead of using chdir().  
 
 =item find
 
-Returns C<FSNode> objects.
+Returns C<Path> objects.  Path.Encoding is set to $?ENC unless the 
+$Encoding parameter is passed in (see Path for further discussion of
+encoding).
+
+=item glob
+
+Returns C<Path> objects.  Path.Encoding is set to $?ENC unless the 
+Encoding parameter is passed in (see Path for further discussion of
+encoding).  
 
 =item rename
 
 =back
 
-=head2 IO::FSNode
+=head2 Path
 
-    class IO::FSNode {
-        has Array of IO::FSNodeACL @.ACLs;
-        has Hash of %.times;
+The "Path" role covers both the path to the file, and the file metadata.  They
+are usually created with the qp{/path/to/file} syntax.  It could be a directory,
+file, link, or something else OS-specific.  
+
+    role Path does Str does Array {
+        has Str $.Type;
+        has Str @.Elements;
+        has Str $.Encoding;
+        has Buf $.Binary;
+        has IO::ACL @.ACLs;
+        has %.times;
     ...
     }
 
-The C<%times> has keys that can be eg. C<ctime>, C<Modification>, and C<Access> (and maybe others on
-other operating systems), and the values are all C<Temporal::Instant> objects.
+C<$.Type> can be C<File>, C<Directory>, C<Link>, or C<Other>.  See 
+C<.create()> method documentation for how it is set.  
 
-When C<.path> is implemented, it should return the path that this was opened with.
+The C<@.Elements> array is a list of Str that contain the path elements, but
+all are checked before being pushed onto the array.  Note that @.Elements
+can not be accessed unless $.Encoding is defined.  
+
+The C<%.times> has keys that can be e.g. C<ctime>, C<Modification>, and 
+C<Access> (and maybe others on other operating systems), and the values are 
+all C<Instant> objects.
+
+When a Path is used as a Str, it allows some operations, so that it can 
+be concatenated easily with other strings.  When used as an Array, it 
+acts as an array of path elements.  
+
+=head3 Methods
 
 =over 4
 
-=item IO ~~ :X
-X<:r>X<:w>X<:x>X<:o>X<:R>X<:W>X<:X>X<:O>X<:e>X<:z>X<:s>X<:f>X<:d>X<:l>X<:p>
-X<:S>X<:b>X<:c>X<:t>X<:u>X<:g>X<:k>X<:T>X<:B>X<:M>X<:A>X<:C>
+=item new
 
-=item EXPR ~~ :X
+While new Path objects will normally be created with the qp{/path/to/file} 
+syntax, there are also OO-related alternatives.  
 
-  $file.:X
-  $file ~~ :X
+This is called automatically on object creation.
 
-A file test, where X is one of the letters listed below.  This unary
-operator takes one argument, either a filename or a filehandle, and
-tests the associated file to see if something is true about it.
+    multi method new(
+        Stringy :$Path,
+        Str :@PathElements,
+        Str :$Encoding,
 
-A C<Pair> used as a pattern is treated as a file test.
+        Str :@Constraints, 
+        Str :$Protocol,
 
-    :r  File is readable by effective uid/gid.
-    :w  File is writable by effective uid/gid.
-    :x  File is executable by effective uid/gid.
-    :o  File is owned by effective uid.
+        Str :$Target,
+        Str :$LinkType,
+        Str :$Type,
+    );
 
-    :R  File is readable by real uid/gid.
-    :W  File is writable by real uid/gid.
-    :X  File is executable by real uid/gid.
-    :O  File is owned by real uid.
+Path and PathElements are mutually exclusive.  
 
-    :e  File exists.
-    :z  File has zero size (is empty).
-    :s  File has nonzero size (returns size in bytes).
+If the $Encoding parameter is not defined, then, if Path is a Buf, 
+the $.Encoding attribute remains undefined, otherwise it is set to 
+$?ENC.  There are
+a number of features that don't work without the encoding being set.  
 
-    :f  File is a plain file.
-    :d  File is a directory.
-    :l  File is a symbolic link.
-    :p  File is a named pipe (FIFO), or Filehandle is a pipe.
-    :S  File is a socket.
-    :b  File is a block special file.
-    :c  File is a character special file.
-    :t  Filehandle is opened to a tty.
+$Constraints determines whether the $Path and $Target strings should be
+assumed to be Unix-style, Windows-style, or something else.  
 
-    :u  File has setuid bit set.
-    :g  File has setgid bit set.
-    :k  File has sticky bit set.
+If the Type option is not passed in, the Path.Type attribute is initialised 
+as follows:
 
-    :T  File is an ASCII text file (heuristic guess).
-    :B  File is a "binary" file (opposite of :T).
+    Value        Condition
+    =====        =========
+    Directory    $Path ends in a separator (i.e. /)
+    Link         $Target is specified
+    Other        $Protocol is specified
+    Undefined    All other cases
 
-    :M  Script start time minus file modification time, in days.
-    :A  Same for access time.
-    :C  Same for inode change time (Unix, may differ for other platforms)
+If the $.Type attribute is read (which will happen in a number of cases,
+including when you read $.Target and $.LinkType), but is still undefined, 
+then an attempt is 
+made to determine what its type should be from the filesystem.  If no 
+answers are found using this method, then it defaults to "File".  
 
-The interpretation of the file permission operators C<:r>, C<:R>,
-C<:w>, C<:W>, C<:x>, and C<:X> is by default based on:
+The C<Target> and C<LinkType> options are only relevant for links that have
+not been created yet, or are to be overwritten; in all other cases, 
+they will be determined from the filesystem.  If Target is not specified,
+this Path is assumed not to be a link.  If LinkType is not specified, 
+then the default is used (symbolic, on a Unix system).  
 
-=over
+Examples:
 
-=item * The mode of the file and the uids and gids of the user
+    # These three do the same thing (on a Unix machine)
+    $path = qp{/home/wayland};
+    $path = Path.new(PathElements => ['home', 'wayland']);
+    $path = Path.new(Constraints => ['Unix'], Path => qp{/home/wayland});
+    $path = Path.new(Path => qp{/home/wayland});
 
-=item * ACLs (access control lists)
+    # This creates a symlink from /home/wayland/m to /home/wayland/Music
+    $path = Path.new(
+        Path => qp{/home/wayland/m},
+        Target => qp{/home/wayland/Music},
+    );
 
-=item * read-only filesystems
+=item path
 
-=back
+method path( --> Str);
 
-There may be other reasons you can't actually read, write, or execute
-the file.  Such reasons may be for example network filesystem access
-controls and unrecognized executable formats.
+Returns @.elements concatenated together for use as a string.  Usually this 
+is the path that it was originally created with.  
 
-Also note that, for the superuser on the local filesystems, the C<:r>,
-C<:R>, C<:w>, and C<:W> tests always return 1, and C<:x> and C<:X> return 1
-if any execute bit is set in the mode.  Scripts run by the superuser
-may thus need to do a C<stat> to determine the actual mode of the file,
-or temporarily set their effective uid to something else.
+=item canonpath
 
-The C<:T> and C<:B> switches work as follows.  The first block or so of the
-file is examined for odd characters such as strange control codes or
-characters with the high bit set.  If too many strange characters (>30%)
-are found, it's a C<:B> file; otherwise it's a C<:T> file.  Also, any file
-containing null in the first block is considered a binary file.  If C<:T>
-or C<:B> is used on a filehandle, the current C<IO> buffer is examined
-rather than the first block.  Both C<:T> and C<:B> return true on a null
-file, or a file at EOF when testing a filehandle.  Because you have to
-read a file to do the C<:T> test, on most occasions you want to use a C<:f>
-against the file first, as in C<next unless $file ~~ :f  && $file ~~ :T >.
+    method canonpath( --> Str);
 
-You can test multiple features using junctions:
-
-  if -$filename ~~ :r & :w & :x  {...}
-
-Or pass multiple tests together in OO style:
-
-  if $filename.TEST(:e,:x) {...}
-
+No physical check on the filesystem, but a logical cleanup of a path.
 
 =item realpath
 
@@ -759,91 +831,57 @@ Or pass multiple tests together in OO style:
 
 Gets the real path to the object, resolving softlinks/shortcuts, etc
 
-=item === operator
+=item resolvepath
 
-    method infix:<===>(Str $filename);
+    method resolvepath(Str :@Types --> Str);
 
-Test whether the specified filename is the same file as this file.  On a Unix system,
-this would presumably be done by comparing inode numbers or something.
+@Types can contain "real" and "canon", in any order, and the
+method will run realpath and canonpath in the order specified.
 
-=item new
+=item ACCEPTS
 
-This is called automatically on object creation.
+    multi method ACCEPTS(Path $filename);
 
-    multi method new(Array of Str :@PathElements);
-    multi method new(Str :$Type, Str :$Path, Str :$Create);
-    multi method new(Str :$Path);
+Test whether the specified filename is the same file as this file.  On a 
+Unix system, this would presumably be done by comparing inode numbers or 
+something.  
 
-This last throws an error if "C<use portable>" pragma is used.
+=item create
+X<mkdir> X<md> X<directory, create> X<touch>
 
-If the C<Create> option is passed in, and the node doesn't exist in the filesystem, it
-attempts to create the node; this can be used for I<mkdir>, I<link>, and similar
-functionality.
+    method create(
+        Bool :$Recursive,
+        Bool :$Truncate,
+    )
 
-Examples:
+Creates/touches the specified path.  In the case of a link or a directory, no 
+parameters are required.  If a file doesn't exist, then no parameters are 
+required.  If the path already exists, then an exception is thrown, unless
+the file is an ordinary file or a link, and $Truncate is true.  
 
-    $fsnode = new IO::FSNode(PathElements => ['home', 'wayland']);
-    $fsnode = new IO::FSNode(Type => 'Unix', Path => '/home/wayland');
-    $fsnode = new IO::FSNode(Path => '/home/wayland'); # portability error
+The $Recursive option specifies that any necessary parent directories should
+also be created.  
+
+=item touch
+
+Update timestamps on a file.  
 
 =item delete
 
-This deletes the C<FSNode> from the filesystem.  If the node has children, it throws an error
-unless the C<Recursive> option is specified.  Returns the number of nodes deleted.
+X<rmdir> X<rd> X<directory, remove>
 
-=back
+    method delete(Bool :$Recursive --> Int);
 
-=head2 IO::FSNodeACL
+This deletes the C<Path> from the filesystem.  If the node has children, it 
+throws an error unless the C<Recursive> option is specified.  It returns the 
+number of nodes deleted, and may throw an exception.  
 
-This is a basic abstraction; for better control, use the operating-system specific
-interfaces, over which this is a thin veneer.
+=item get
 
-    class IO::FSNodeACL {
-        has Str $.type; # "User", "Group", "Everyone", ???
-        has Str $.id; # username or groupname; unused for $type eq "Everyone"
-        has %.permissions;
-                # Unsupported values may (or may not) throw
-                # UnsupportedPermission when set or read
-        has IO::FSNode $.owningObject;
-        ...
-    }
+    multi get () 
 
-The permissions used in C<%permissions> are:
-
-=over
-
-=item Readable
-
-Should be supported by all filesystems as an item to read from the hash for the group
-"Everyone".
-
-=item Writeable
-
-Should be supported by all filesystems as an item to read from the hash for the group
-"Everyone".
-
-=item Executeable
-
-Supported on most Unix systems, anyway.  Windows should be able to guess when this is
-read, and throw an exception if written to.
-
-=item Default
-
-An ACL of User,fred,Default sets the user "fred" to be the owner of the file.  This can be
-done with groups too.  Works on Unix, at least.
-
-=back
-
-The C<$.owningObject> attribute of C<FSNodeACL> shows what the ACL is set on.  On a
-Windows system, this can be a parent directory, as permissions are inherited.
-
-=head2 IO::FileNode
-
-    role IO::FileNode does IO::FSNode {
-        ...
-    }
-
-=over
+Returns the next line from $*ARGFILES.  (Note that other C<get> functions
+and methods are operations on any iterator, not just an IO handle.)
 
 =item lines
 
@@ -854,9 +892,9 @@ Windows system, this can be a parent directory, as permissions are inherited.
         Any  :$nl = "\n",
         Bool :$chomp = True,
         --> List
-    ) is export
+    )
 
-    multi lines (Str $filename,
+    multi lines (IO $fh = $*ARGFILES,
         Any  $limit = *,
         Bool :$bin = False,
         Str  :$enc = "Unicode",
@@ -865,7 +903,10 @@ Windows system, this can be a parent directory, as permissions are inherited.
         --> List
     )
 
-Returns some or all the lines of a file as a C<List> regardless of context.
+    # See also Str.lines and lines(Str)
+
+Returns some or all the lines of a file or entries in a directory
+as a C<List> regardless of context.
 See also C<slurp>.  Note that lists are lazy by default, but you
 can always ask for C<eager lines>.  Note that the limit semantics cannot be
 duplicated by subscripting, since
@@ -894,7 +935,12 @@ you just get the number of lines available.
         Bool :$bin = False,
         Str  :$enc = "Unicode",
         --> Str|Buf
-    ) is export
+    )
+    multi slurp (IO $fh = $*ARGFILES,
+        Bool :$bin = False,
+        Str  :$enc = "Unicode",
+        --> Str|Buf
+    )
     multi slurp (Str $filename,
         Bool :$bin = False,
         Str  :$enc = "Unicode",
@@ -904,66 +950,146 @@ you just get the number of lines available.
 Slurps the entire file into a C<Str> (or C<Buf> if C<:bin>) regardless of context.
 (See also C<lines>.)
 
+In the case of a directory, it uses "\n" to separate entries.  
+
 =back
 
-=head2 IO::DirectoryNode
+=head3 Other things
 
-    role IO::DirectoryNode does IO::FSNode {
+=over 4
+
+=item IO ~~ :X
+X<:r>X<:w>X<:x>X<:o>X<:R>X<:W>X<:X>X<:O>X<:e>X<:z>X<:f>X<:d>X<:l>X<:p>
+X<:S>X<:b>X<:c>X<:t>X<:u>X<:g>X<:k>X<:T>X<:B>X<:M>X<:A>X<:C>
+
+=item EXPR ~~ :X
+
+  $file.:X
+  $file ~~ :X
+
+A file test, where X is one of the letters listed below.  This unary
+operator takes one argument, either a filename or a filehandle, and
+tests the associated file to see if something is true about it.
+
+A C<Pair> used as a pattern is treated as a file test.
+
+    :r  File is readable by effective uid/gid.
+    :w  File is writable by effective uid/gid.
+    :x  File is executable by effective uid/gid.
+    :o  File is owned by effective uid.
+
+    :R  File is readable by real uid/gid.
+    :W  File is writable by real uid/gid.
+    :X  File is executable by real uid/gid.
+    :O  File is owned by real uid.
+
+    :e  File exists.
+    :s  File has a size > 0 bytes
+
+    :f  File is a plain file.
+    :d  File is a directory.
+    :l  File is a symbolic link.
+    :p  File is a named pipe (FIFO), or Filehandle is a pipe.
+    :S  File is a socket.
+    :b  File is a block special file.
+    :c  File is a character special file.
+    :t  Filehandle is opened to a tty.
+
+    :u  File has setuid bit set.
+    :g  File has setgid bit set.
+    :k  File has sticky bit set.
+
+Each of these is redirected (by C<Pair.ACCEPTS>) to the
+corresponding method name on an IO object.  (These methods are not
+defined on bare strings).  Each test returns a boolean, and may be
+negated with a C<!> after the colon.  They maybe ANDed and ORed using
+junctional logic.  In fact, this is the primary reason for writing
+them as a pattern match; if you only want one test, you could just call
+the individual IO method directly and more efficiently.  In any case,
+you must call the C<.s> method to return the file's size in bytes.
+
+There is no <.z> method, so just write C<:!s> to test a file for zero size.
+Likewise, just call C<.s> directly if you actually want to know the file's
+size, since C<~~ :s> only returns a boolean.
+
+The C<.T> and C<.B> methods will be replaced by some filetype guessing
+methods more appropriate to the age of Unicode.  There are likely methods
+to return the various ages of the file corresponding to Perl 5's C<-M>,
+C<-A>, and C<-C> times, but they make no sense as booleans, so also call
+those methods directly (whatever they end up being named).
+
+The interpretation of the file permission operators C<:r>, C<:R>,
+C<:w>, C<:W>, C<:x>, and C<:X> is by default based on:
+
+=over
+
+=item * The mode of the file and the uids and gids of the user
+
+=item * ACLs (access control lists)
+
+=item * read-only filesystems
+
+=back
+
+There may be other reasons you can't actually read, write, or execute
+the file.  Such reasons may be for example network filesystem access
+controls and unrecognized executable formats.
+
+Also note that, for the superuser on the local filesystems, the C<:r>,
+C<:R>, C<:w>, and C<:W> tests always return 1, and C<:x> and C<:X> return 1
+if any execute bit is set in the mode.  Scripts run by the superuser
+may thus need to do a C<stat> to determine the actual mode of the file,
+or temporarily set their effective uid to something else.
+
+You can test multiple features using junctions:
+
+  if $filename.IO ~~ :r & :w & :x  {...}
+
+=back
+
+=head2 IO::ACL
+
+This is a basic abstraction; for better control, use the operating-system specific
+interfaces, over which this is a thin veneer.
+
+    class IO::ACL {
+        has Str $.type; # "User", "Group", "Everyone", ???
+        has Str $.id; # username or groupname; unused for $type eq "Everyone"
+        has %.permissions;
+                # Unsupported values may (or may not) throw
+                # UnsupportedPermission when set or read
+        has Path $.owningObject;
         ...
     }
 
-=item open
+The permissions used in C<%permissions> are:
 
-    $dir.open(
-        Str  :$enc = "Unicode",
-    );
+=over
 
-Opens a directory for processing, if the C<new> method was passed the C<NoOpen> option.
-Makes the directory looks like
-a list of autochomped lines, so just use ordinary C<IO> operators after the open.
+=item Readable
 
-=item rmdir FILENAME
-X<rmdir> X<rd> X<directory, remove>
+Should be supported by all filesystems as an item to read from the hash for the group
+"Everyone".
 
-=item rmdir
+=item Writeable
 
-Deletes the directory specified by FILENAME if that directory is
-empty.  If it succeeds it returns true, otherwise it returns C<Failure> and
-sets C<$!> (errno).
+Should be supported by all filesystems as an item to read from the hash for the group
+"Everyone".
 
-=item chdir FILENAME
-X<chdir> X<cd>
+=item Executable
 
-=item chdir
+Supported on most Unix systems, anyway.  Windows should be able to guess when this is
+read, and throw an exception if written to.
 
-Changes the current working directory to the one specified by FILENAME.
-If it succeeds it returns true, otherwise it returns C<Failure> and
-sets C<$!> (errno).
+=item Default
 
-=head2 IO::LinkNode
+An ACL of User,fred,Default sets the user "fred" to be the owner of the file.  This can be
+done with groups too.  Works on Unix, at least.
 
-    role IO::LinkNode does IO::FSNode {
-        ...
-    }
+=back
 
-=item new
-
-Creates a new link in the filesystem.
-
-    IO::LinkNode.new(
-        Name => '/home/wayland/symlink.txt'
-        Target => '/home/wayland/realfile.txt',
-        Type => 'Hard', # Default is Symbolic
-    );
-
-Reads in the previously created symlink.
-
-    $link = IO::LinkNode.new(
-        Name => '/home/wayland/symlink.txt',
-    );
-    print $link.target; # prints /home/wayland/realfile.txt
-
-Neither of these is "C<use portable>" compatible.
+The C<$.owningObject> attribute of C<ACL> shows what the ACL is set on.  On a
+Windows system, this can be a parent directory, as permissions are inherited.
 
 =head2 IO::Socket::INET
 
@@ -1053,7 +1179,9 @@ reader and writer ends of the pipe.
 
 =head2 Unix
 
-=head2 IO::FSNode::Unix
+=head2 Path::Unix
+
+=over
 
 =item chown
 
@@ -1065,14 +1193,14 @@ that order.  A value of -1 in either position is interpreted by
 most systems to leave that value unchanged.  Returns the number
 of files successfully changed.
 
-    $count = chown $uid, $gid, ’foo’, ’bar’;
+    $count = chown $uid, $gid, 'foo', 'bar';
     chown $uid, $gid, @filenames;
 
 On systems that support C<fchown>, you might pass file handles
-among the files.  On systems that don’t support C<fchown>, passing
+among the files.  On systems that don't support C<fchown>, passing
 file handles produces a fatal error at run time.
 
-Here’s an example that looks up nonnumeric uids in the passwd
+Here's an example that looks up nonnumeric uids in the passwd
 file:
 
    $user = prompt "User: ";
@@ -1085,7 +1213,7 @@ file:
    chown $uid, $gid, @ary;
 
 On most systems, you are not allowed to change the ownership of
-the file unless you’re the superuser, although you should be
+the file unless you're the superuser, although you should be
 able to change the group to any of your secondary groups.  On
 insecure systems, these restrictions may be relaxed, but this
 is not a portable assumption.  On POSIX systems, you can detect
@@ -1103,7 +1231,7 @@ number, and which definitely should I<not> be a string of octal digits:
 C<0o644> is okay, C<0644> is not.  Returns the number of files
 successfully changed.
 
-    $cnt = chmod 0o755, 'foo', 'bar';
+    $count = chmod 0o755, 'foo', 'bar';
     chmod 0o755, @executables;
     $mode = '0644'; chmod $mode, 'foo';      # !!! sets mode to --w----r-T
     $mode = '0o644'; chmod $mode, 'foo';     # this is better
@@ -1119,6 +1247,8 @@ Returns a stat buffer.  If the lstat succeeds, the stat buffer evaluates
 to true, and additional file tests may be performed on the value.  If
 the stat fails, all subsequent tests on the stat buffer also evaluate
 to false.
+
+=back
 
 =head2 IO::Socket::Unix
 
@@ -1208,7 +1338,7 @@ Should there be an IO::Interactive role?
 
 =item IO.eof
 
-Gone, see C<IO::Endable>.
+Gone, see eoi C<IO::Seekable>.
 
 =item IO.fileno
 
@@ -1227,7 +1357,7 @@ Use C<stat> with the C<:link> option.
 Changed to C<.path>, but we haven't gotten around to specifying this on all of them.
 
 The C<.name> method returns the name of the file/socket/uri the handle
-was opened with, if known.  Returns undef otherwise.  There is no
+was opened with, if known.  Returns Nil otherwise.  There is no
 corresponding C<name()> function.
 
 =item pipe
@@ -1236,7 +1366,7 @@ Gone, see Pipe.pair
 
 =item select(both)
 
-Gone.  (Note: for subsecond sleep, just use sleep with a fractional argument.)
+Gone.  (Note: for sub-second sleep, just use sleep with a fractional argument.)
 
 =item IO.shutdown()
 
@@ -1256,7 +1386,7 @@ Gone, see C<IO::Writeable.read()>.
 
 =item utime
 
-Gone, see C<IO::FSNode.times>.
+Gone, see C<Path.times>.
 
 =back
 

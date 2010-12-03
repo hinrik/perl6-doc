@@ -19,14 +19,15 @@ DRAFT: Synopsis 32: Setting Library - Containers.pod
 
     Created: 19 Feb 2009 extracted from S29-functions.pod
 
-    Last Modified: 12 May 2009
-    Version: 8
+    Last Modified: 5 Nov 2010
+    Version: 24
 
 The document is a draft.
 
-If you read the HTML version, it is generated from the pod in the pugs
-repository under /docs/Perl6/Spec/S32-setting-library/Containers.pod so edit it there in
-the SVN repository if you would like to make changes.
+If you read the HTML version, it is generated from the Pod in the specs
+repository under
+L<https://github.com/perl6/specs/blob/master/S32-setting-library/Containers.pod>
+so edit it there in the git repository if you would like to make changes.
 
 =head1 Function Roles
 
@@ -50,7 +51,7 @@ The C<Associative> role implies the ability to support C<< postcircumfix:<{ }> >
 
 =item cat
 
- our Cat multi cat( *@@list )
+ our Cat multi cat( **@list )
 
 C<cat> reads arrays serially rather than in parallel as C<zip> does. It
 returns all of the elements of the containers that were passed to it
@@ -61,13 +62,16 @@ like so:
 Typically, you could just write C<(@a,@b,@c)>, but sometimes
 it's nice to be explicit about that:
 
- @foo := [[1,2,3],[4,5,6]]; say cat([;] @foo); # 1,2,3,4,5,6
+ @foo := [[1,2,3],[4,5,6]]; say cat(||@foo); # 1,2,3,4,5,6
 
 In addition, a C<Cat> in item context emulates the C<Str> interface lazily.
 
+[Conjecture: Cats should maybe just do the lazy strings, and leave flattening
+to other operators.]
+
 =item roundrobin
 
- our List multi roundrobin( *@@list )
+ our Parcel multi roundrobin( **@list )
 
 C<roundrobin> is very similar to C<zip>.  The difference is that
 C<roundrobin> will not stop on lists that run out of elements but
@@ -82,8 +86,8 @@ will get the following values for C<$x>: C<1, 1, 1, 2, 2, 3>
 
 =item zip
 
- our List of Capture multi zip ( *@@list )
- our List of Capture multi infix:<Z> ( *@@list )
+ our Parcel of Parcel multi zip ( **@list )
+ our Parcel of Parcel multi infix:<Z> ( **@list )
 
 zip takes any number of arrays and returns one tuple for every index.
 This is easier to read in an example:
@@ -108,7 +112,7 @@ C<Z> is an infix equivalent for zip:
 
  for @a Z @b Z @c -> $a, $b, $c {...}
 
-In C<@@> context a List of Array is returned instead of flat list.
+In lol context a list of C<List> is returned instead of a flat list.
 
 =back
 
@@ -116,9 +120,21 @@ In C<@@> context a List of Array is returned instead of flat list.
 
 The following are defined in the C<List> role/class:
 
-    role List does Container does Positional {...}
+    role List does Container {...}
 
 =over
+
+=item new
+
+ our List multi method new(*@args)
+
+Constructs an C<List> that can visit all iterable elements of the all the arguments.
+
+=item list
+
+ our List sub list(*@args)
+
+Constructs an C<List> that can visit all iterable elements of the all the arguments.
 
 =item cat
 
@@ -185,23 +201,28 @@ the resulting list to store into C<@friends>.
 Note that, unlike in Perl 5, a comma is required after the C<Matcher>
 in the multi form.
 
+Note that C<grep> is an implicit loop, so C<next> and C<last> without
+an argument will iterate or terminate the C<grep> itself, not some
+loop surrounding the statement containing the C<grep>.  Use a label
+if you mean the other thing.
+
 =item first
 
- our Item multi method first ( @values: Matcher $test )
- our Item multi first ( Matcher $test, *@values )
+ our Parcel multi method first ( @values: Matcher $test )
+ our Parcel multi first ( Matcher $test, *@values )
 
-C<first> works exactly like C<grep> but returns only the first matching value.
+C<first> searches exactly like C<grep> but returns only the first matching value.
 
 =item pick
 
- our multi method pick ( @values: Int $num = 1, Bool :$repl )
- our multi method pick ( @values: Whatever, Bool :$repl )
- our multi pick ( Int $num, Bool :$repl, *@values )
- our multi pick ( Whatever, Bool :$repl, *@values )
+ our multi method pick ( @values: Int $num = 1 )
+ our multi method pick ( @values: Whatever )
+ our multi pick ( Int $num, *@values )
+ our multi pick ( Whatever, *@values )
 
 C<pick> takes a list or array of values and returns a random
-selection of elements from the list (without replacement unless
-C<:repl> is indicated).  When selecting without replacement if C<*>
+selection of elements from the list (without replacement;
+see C<roll> for dice roll aka replacement semantics).  If C<*>
 is specified as the number (or if the number of elements in
 the list is less than the specified number), all the available
 elements are returned in random order:
@@ -209,15 +230,32 @@ elements are returned in random order:
     @team = @volunteers.pick(5);
     @shuffled = @deck.pick(*);
 
-When selecting with replacement the specified number of picks
-are provided.  In this case C<*> would provide an infinite list
-of random picks from C<@values>:
-
-    @byte = (0,1).pick(8, :repl);
-    for (1..20).pick(*, :repl) -> $die_roll { ... }
-
-Due to the normal semantics of returning a C<Capture>, a pick of a
+Due to the normal semantics of returning a C<Parcel>, a pick of a
 single element may be used as an item without requiring C<.[0]>.
+
+=item roll
+
+ our multi method roll ( @values: Int $num = 1 )
+ our multi method roll ( @values: Whatever )
+ our multi roll ( Int $num, *@values )
+ our multi roll ( Whatever, *@values )
+
+C<roll> takes a list or array of values and returns a random selection
+of elements from the list, like rolling N independent dice, where
+each list element corresponds to one side of your dice.  This is also known
+as "pick with replacement", that is, like pulling one marble out of
+bag and putting it back, and doing this N times; see C<pick> for the
+non-replacement semantics.  If C<*> is specified as the number, C<*>
+provides an infinite list of random choices from C<@values>:
+
+    @byte = (0,1).roll(8);                   # 8d2
+    for (1..20).roll(*) -> $die_roll { ... } # 1d20 xx *
+
+Due to the normal semantics of returning a C<Parcel>, a roll of a
+single element may be used as an item without requiring C<.[0]>.
+
+Note that C<roll 1, 6> is not the same as a 1d6, but always returns
+C<6> as a degenerate one-sided die.  Use C<roll 1, 1..6> to simulate a six-sided die.
 
 =item join
 
@@ -234,8 +272,8 @@ just coerce to C<Str>.
 
 =item map
 
- our List of Capture multi method map ( @values: Code *&expression )
- our List of Capture multi map ( Code $expression, *@values )
+ our List of Parcel multi method map ( @values: Code *&expression )
+ our List of Parcel multi map ( Code $expression, *@values )
 
 C<map> returns a lazily evaluated list which is comprised of
 the return value of the expression, evaluated once for every
@@ -249,6 +287,11 @@ The actual return value is a multislice containing one slice per
 map iteration.  In most contexts these slices are flattened into a
 single list.
 
+Note that C<map> is an implicit loop, so C<next> and C<last> without
+an argument will iterate or terminate the C<map> itself, not some
+loop surrounding the statement containing the C<map>.  Use a label
+if you mean the other thing.
+
 =item reduce
 
  our Item multi method reduce ( @values: Code *&expression )
@@ -260,6 +303,11 @@ single list.
    }
    $res;
  }
+
+Note that C<reduce> is an implicit loop, so C<next> and C<last> without
+an argument will iterate or terminate the C<reduce> itself, not some
+loop surrounding the statement containing the C<reduce>.  Use a label
+if you mean the other thing.
 
 
 =item reverse
@@ -321,8 +369,8 @@ C<is canonicalized(&lc)>.)
  our multi method min( @values: Ordering @by )
  our multi method min( @values: Ordering $by = &infix:<cmp> )
 
- our multi min( Ordering @by,  *@values )
- our multi min( Ordering $by,  *@values )
+ our multi min( *@values, Ordering :@by )
+ our multi min( *@values, Ordering :$by )
 
 Returns the earliest (i.e., lowest index) minimum element
 of C<@values> , using criteria C<$by> or C<@by> for
@@ -345,8 +393,8 @@ C<[min]> reduction operator.
  our multi method max( @values: Ordering @by )
  our multi method max( @values: Ordering $by = &infix:<cmp> )
 
- our multi max( Ordering @by,  *@values )
- our multi max( Ordering $by,  *@values )
+ our multi max(*@values, Ordering :@by,)
+ our multi max(*@values, Ordering :$by,)
 
 Returns the earliest (i.e., lowest index) maximum element
 of C<@values> , using criteria C<$by> or C<@by> for
@@ -362,6 +410,33 @@ canonicalized($how)> are allowed on the positional elements.
 
 For a C<max> function that does not require an ordering, see the
 C<[max]> reduction operator.
+
+=item minmax
+
+ our multi method minmax( @values: *&by )
+ our multi method minmax( @values: Ordering @by )
+ our multi method minmax( @values: Ordering $by = &infix:<cmp> )
+
+ our multi minmax( *@values, Ordering :@by )
+ our multi minmax( *@values, Ordering :$by )
+
+Returns a C<Range> from the minimum element of C<@values> to the maximum
+element, using criteria C<$by> or C<@by> for comparisons. C<@by> differs from
+C<$by> in that each criterion is applied, in order, until a non-zero (tie)
+result is achieved. C<Range> elements in C<@values> are treated as if their
+minimum and maximum values were passed individually, except that if the
+corresponding C<excludes> flag is set in Range, the excludes flag is also set
+in the returned C<Range>.
+
+C<Ordering> is as described in L<"Type Declarations">.  Any
+C<Ordering> may receive the mixin C<canonicalized(Code $how)> to
+adjust the case, sign, or other order sensitivity of C<cmp>.
+(Mixins are applied to values using C<but>.)  If a C<Signature>
+is used as an C<Ordering> then sort-specific traits such as C<is
+canonicalized($how)> are allowed on the positional elements.
+
+For a C<minmax> function that does not require an ordering, see the
+C<[minmax]> reduction operator.
 
 =item any
 
@@ -415,9 +490,15 @@ All these methods are defined in the C<Array> role/class.
 
 =over
 
+=item new 
+
+ our Array multi method new(*@args)
+
+Constructs a new C<Array> containing the arguments passed to C<new>.
+
 =item shape
 
- our Capture method shape (@array: ) is export
+ our Parcel method shape (@array: ) is export
 
 Returns the declared shape of the array, as described in S09.
 
@@ -429,14 +510,15 @@ Returns the final subscript of the first dimension; for a one-dimensional
 array this simply the index of the final element.  For fixed dimensions
 this is the declared maximum subscript.  For non-fixed dimensions (undeclared
 or explicitly declared with C<*>), the index of the actual last element is used.
+So that the degenerate case of an empty range works correctly, C<-1> is returned
+if the array is empty.  (If you actually try to index with C<-1>, you'll get a
+failure.)
 
 =item elems
 
  our Int method elems (@array: ) is export
 
-Returns the length of the array counted in elements.  (Sparse array
-types should return the actual number of elements, not the distance
-between the maximum and minimum elements.)
+Returns the length of the array counted in elements.
 
 =item delete
 
@@ -475,7 +557,7 @@ adverb to a subscripting operation.
 
 This adverb may be applied to any subscripting operation.  The
 operation returns true if specified element exists.  If a slice
-is specified by the subscript, a C<Capture> of C<Bool> is returned,
+is specified by the subscript, a C<Parcel> of C<Bool> is returned,
 which can be processed using junctions.
 
 
@@ -484,13 +566,46 @@ which can be processed using junctions.
  our Scalar multi method pop ( @array: ) is export
 
 Remove the last element of C<@array> and return it.
+If C<@array> is empty returns a failure.
 
 =item push
 
  our Array multi method push ( @array: *@values ) is export
 
-Add to the end of C<@array>, all of the subsequent arguments and
-returns the modified array.
+Adds all the values to the end of C<@array> eagerly.
+Returns the modified array.
+
+=item plan
+
+ our Array multi method plan ( @array: *@list ) is export
+
+Adds the list to the end of C<@array> lazily as a kind of "lazy push".
+(That is, the reified part of the array is not modified, but the list
+is appended to the not-yet-reified specifications for how to
+extend the array on demand, if it is subscripted or shifted beyond the
+currently reified elements.)  Returns the modified array.
+
+Note that the semantics of these are different:
+
+    @ro := (0,1,*+*...*);
+    @rw.plan(0,1,*+*...*);
+
+In the first case, C<@ro> is bound directly to the list, so its
+values are memoized but not considered mutable.  In contrast, C<@rw>
+allows modification of any reified element; new elements are merely
+initialized to the fibonacci sequence.  If you try to modify a
+non-reified element, the array will be reified to that point before
+the modification is attempted.
+
+For all external purposes, the array considers that its plan is
+part of the array.  If you ask for C<.elems>, for instance, it will
+try to reify the entire array, which might take a long time in the
+case of infinite arrays (though a list may return C<Inf> if it can
+determine this).  Methods such as C<.splice> can refer to the rest of
+the list in the abstract, and need only reify those elements necessary
+to perform the operation in question.  (Hence, there is no need for
+an C<.unplan> method, since the plan of an array may be thrown away
+by using C<splice> without the risk of memory exhaustion.)
 
 =item rotate
 
@@ -528,6 +643,7 @@ and rotating that instead.)
  our Scalar multi method shift ( @array:  ) is export
 
 Remove the first element from C<@array> and return it.
+If C<@array> is empty returns a failure.
 
 =item splice
 
@@ -553,15 +669,15 @@ having to pass these otherwise optional parameters, use the piping operator(s):
  splice(@array,10) <== 1..*;
 
 which replaces C<@array[10]> and all subsequent elements with an infinite
-series starting at C<1>.
+sequence starting at C<1>.
 
 This behaves similarly to Perl 5's C<splice>.
 
 If C<@array> is multidimensional, C<splice> operates only on the first
 dimension, and works with Array References.
 
-C<splice> returns a C<Capture> of the deleted elements, which behaves as
-expected in either list or scalar context.
+C<splice> returns a C<Parcel> of the deleted elements, which behaves as
+expected in either list or item context.
 
 
 =item unshift
@@ -582,6 +698,7 @@ returns the modified array.
  multi method keys   ( @array: Matcher $indextest? ) is export
  multi method kv     ( @array: Matcher $indextest? ) is export
  multi method pairs  ( @array: Matcher $indextest? ) is export
+ multi method enums  ( @array: Matcher $indextest? ) is export
  multi method values ( @array: Matcher $indextest? ) is export
 
 Iterates the elements of C<@array>, in order.
@@ -592,6 +709,9 @@ C<$index ~~ $indextest> are iterated.  (To select on values use C<grep>.)
 What is returned at each element of the iteration varies with function.
 C<values> returns the value of the associated element; C<kv> returns
 a 2 element list in (index, value) order, C<pairs> a C<Pair(index, value)>.
+With C<pairs> the values are references back to the original containers,
+while with C<enums> a snapshot of those values is taken.  That is, C<.pairs>
+returns a C<PairMap> while C<enums> returns an C<EnumMap>.
 
 If C<@array> is declared to be multi-dimensional, the keys returned may
 in fact be slice lists.  (Arrays that are effectively multi-dimensional
@@ -619,7 +739,7 @@ returns the elements normally, but reads them out destructively.
 
 This adverb may be applied to any subscripting operation.  The
 operation returns true if specified element exists.  If a slice
-is specified by the subscript, a C<Capture> of C<Bool> is returned,
+is specified by the subscript, a C<Parcel> of C<Bool> is returned,
 which can be processed using junctions.
 
 =item keys
@@ -633,11 +753,12 @@ which can be processed using junctions.
  multi method keys   ( %hash: Matcher $keytest? ) is export
  multi method kv     ( %hash: Matcher $keytest? ) is export
  multi method pairs  ( %hash: Matcher $keytest? ) is export
+ multi method enums  ( %hash: Matcher $keytest? ) is export
  multi method values ( %hash: Matcher $keytest? ) is export
 
-Iterates the elements of C<%hash> in no apparent order, but the order
-will be the same between successive calls to these functions, as long as
-C<%hash> doesn't change.
+Iterates the elements of C<%hash>. The order is implementation dependent
+and arbitrary, but will be the same between successive calls to these
+functions, as long as C<%hash> doesn't change.
 
 If C<$keytest> is provided, only elements whose keys evaluate
 C<$key ~~ $keytest> as true are iterated.
@@ -645,6 +766,9 @@ C<$key ~~ $keytest> as true are iterated.
 What is returned at each element of the iteration varies with function.
 C<keys> only returns the key; C<values> the value; C<kv> returns both as
 a 2 element list in (key, value) order, C<pairs> a C<Pair(key, value)>.
+With C<pairs> the values are references back to the original containers,
+while with C<enums> a snapshot of those values is taken.  That is, C<.pairs>
+returns a C<PairMap> while C<enums> returns an C<EnumMap>.
 
 Note that C<kv %hash> returns the same as C<zip(keys %hash; values %hash)>
 
@@ -694,12 +818,13 @@ into multiple pairs.  (The C<< X=> >> expands C<$v> if it is a list.)
 
 =item push
 
- our Int multi method push ( @hash: *@values ) is export
+ our Hash multi method push ( @hash: *@values ) is export
 
 Like hash assignment insofar as it accepts either C<Pair> objects or
-alternating keys and values; however, unlike assignment, when
-a duplicate key is detected, coerces the colliding entry's value to an
-array and pushes the Pair's value onto that array.  Hence to invert
+alternating keys and values; also like in that it returns the new hash.
+However, unlike assignment, when a duplicate key is detected,
+C<push> coerces the colliding entry's value to an
+array and pushes the C<Pair>'s value onto that array.  Hence to invert
 a hash containing duplicate values without losing (associative) information,
 say:
 
@@ -716,18 +841,18 @@ to the original hash.
 
 =back
 
-=head1 Classes
+=head1 Classes and Roles
 
 This documents Buf, List, Seq, Range, Set, Bag, Junction, Array, Hash, KeyHash, KeySet,
-KeyBag, Pair, and Mapping.
+KeyBag, Pair, and PairMap.
 
 =head2 Seq
 
-    class Seq does Positional {...}
+    class Seq does Positional does Iterable {...}
 
 =head2 Range
 
-    class Range does Positional {
+    class Range does Positional does Iterable {
         method from() {...}
         method to() {...}
         method min() {...}
@@ -737,39 +862,47 @@ KeyBag, Pair, and Mapping.
 
 =head2 Buf
 
-    class Buf does Positional {...}
+    class Buf does Positional does Stringy {...}
 
 A mutable container for an array of integer values in contiguous
-memory. The default constructor takes a slurpy array parameter of
+memory. The default constructor takes a single array parameter of
 integers, the largest of which determines the actual type. So
 
-    Buf.new(:16<c3>, :16<B6>) # or
-    Buf.new(195, 182)         # which is exactly the same
+    Buf.new([:16<c3>, :16<B6>]) # or
+    Buf.new([195, 182])         # which is exactly the same
 
 returns a C<buf8> containing two C<uint8> items, while
 
-    Buf.new(256)
+    Buf.new([256])
 
 returns a C<buf16> which consists of a single C<uint16>.
 
 To explicit request a C<Buf> of a specific size, you can use
 
-    Buf.new(127, :size(16))     # returns a buf16
-    Buf.new(1024, :size(8))     # dies, because 1024 >= 2**8
+    Buf.new([127], :size(16))     # returns a buf16
+    Buf.new([1024], :size(8))     # dies, because 1024 >= 2**8
 
 Subtypes with additional constraints like C<utf8> (which only allows valid
 UTF-8 byte sequences) exist and provide similar constructors. See
 L<S02/Built-In Data Types>.
 
+The array in the constructor used to be slurpy rather than positional, but
+the former was deemed to be too inefficient (during signature construction)
+for arrays of many elements.
+
 =head3 Methods
+
+=over
 
 =item decode
 
     our Str method decode($encoding = $?ENC, $nf = $?NF)
 
 Decode the C<Buf> into a C<Str>. For subtypes that know their encoding (like
-C<utf8>, C<utf16>) the C<$encoding> parameter defaults to their intrisic
+C<utf8>, C<utf16>) the C<$encoding> parameter defaults to their intrinsic
 encoding instead.
+
+=back
 
 =head3 C<Buf> Operators
 
@@ -783,17 +916,24 @@ a C<buf8> object.
 Comparing or concatenating two C<Buf> objects of different bit sizes,
 or a C<Buf> that doesn't know its encoding with a C<Str> throws an exception.
 
-Likewising coercing an encoding-unaware C<Buf> to C<Str> dies.
+Likewise, coercing an encoding-unaware C<Buf> to C<Str> dies.
 
 [Conjecture: The behaviour of encoding-aware C<Buf> objects on string
-operators is intentially not defined yet, because I have no idea what
+operators is intentionally not defined yet, because I have no idea what
 implications on speed and usage they might have --moritz].
 
-=head2 Pair
+=head2 Enum and Pair
 
+    class Enum does Associative {...}
     class Pair does Associative {...}
 
-The value of a pair is mutable; the key is not.
+
+A value formed by associating a single key with a single value.
+In an C<Enum>, both key and value are immutable.  In a C<Pair>, the
+key is immutable but the value mutable.  C<Enum> works identically
+to C<Pair> unless you try to modify it.)
+
+=over
 
 =item invert
 
@@ -801,12 +941,30 @@ The value of a pair is mutable; the key is not.
      $pair.value X=> $pair.key
     }
 
-=head2 Mapping
+=back
 
-    class Mapping does Associative {...}
+=head2 EnumMap
 
-An immutable hash value, essentially.  The keys may
-not contain duplicates, while the values may.
+    class EnumMap does Associative does Positional {...}
+
+An immutable hash value, viewable either as a (constant) hash or as
+a sequence of C<Enum>s.  The keys may not contain duplicates, while
+the values may.  The implementation of C<EnumMap> associativity is not
+guaranteed to be as efficient as a C<Hash> lookup.  (A brute force
+linear scan for the matching key is allowed.  Optimization
+is also allowed.)
+
+=head2 PairMap
+
+    class PairMap does Associative does Positional {...}
+
+A hash value that is mutable only in values, differing from a normal
+hash insofar as the key set is frozen.  It may be accessed either as
+a frozen hash or as a sequence of C<Pair>s. The keys may not contain
+duplicates, while the values may.  The implementation of C<PairMap>
+associativity is not guaranteed to be as efficient as a C<Hash> lookup.
+(A brute force linear scan for the matching key is allowed.  Optimization
+to something like an ordered hash is also allowed.)
 
 =head2 Set
 
@@ -815,43 +973,79 @@ not contain duplicates, while the values may.
 A set of unique values.  When used as a hash always treats the set's
 values as the keys of the hash, returning C<True> for set elements.
 See C<KeySet> for a container that can represent different sets
-as keys are added or deleted.
+as keys are added or deleted.  A C<Set> responds to hash operators as
+if it were a C<Hash of True>.
 
 =over
 
 =item pick
 
- our multi method pick ( $set: Int $num = 1, Bool :$repl )
- our multi method pick ( $set: Whatever, Bool :$repl )
+ our multi method pick ( $set: Int $num = 1 )
+ our multi method pick ( $set: Whatever )
 
-Like an ordinary list pick, but returns keys of the bag weighted by
-values, as if the keys were replicated the number of times indicated
-by the corresponding value and then list pick used. C<KeySet> is the
-mutable form of C<Set>.  A C<Set> responds to hash operators as
-if it were a C<Hash of True>.
+Works like an ordinary list C<pick>.
+
+=item roll
+
+ our multi method roll ( $set: Int $num = 1 )
+ our multi method roll ( $set: Whatever )
+
+Works like an ordinary list C<roll>.
 
 =back
 
 =head2 KeySet
 
-A mutable Set container, represented as C<KeyHash of True>.
+A mutable Set container, represented as C<KeyHash of Bool>.
 
 =head2 Bag
 
     class Bag does Associative {...}
 
+A collection of values that need not be unique, represented by an
+associative mapping from each key value to its replication number.
+The C<.elems> method returns the sum of all replication values.
+
 =over
 
 =item pick
 
- our multi method pick ( $bag: Int $num = 1, Bool :$repl )
- our multi method pick ( $bag: Whatever, Bool :$repl )
+ our multi method pick ( $bag: Int $num = 1 )
+ our multi method pick ( $bag: Whatever )
+ our multi method pickpairs ( $bag: Int $num = 1 )
+ our multi method pickpairs ( $bag: Whatever )
 
-Like an ordinary list pick, but returns keys of the bag weighted by
+Like an ordinary list C<pick>, but returns keys of the bag weighted by
 values, as if the keys were replicated the number of times indicated
 by the corresponding value and then list pick used.  C<KeyBag> is the
 mutable form of C<Bag>.  A C<Bag> responds to hash operators as
 if it were a C<Hash of UInt>.
+
+The underlying metaphor for picking is that you're pulling colored
+marbles out a bag.  (For "picking with replacement" see C<roll> instead.)
+Picking require tracking the temporary state, so the immutable C<Bag> is copied to
+a temporary private C<KeyBag>, and the picks are made from that
+using the corresponding C<.grab> or C<.grabpairs> method (see below).
+
+Each C<.pick> invocation maintains its own private state and has no
+effect on subsequent C<.pick> invocations.
+
+=item roll
+
+ our multi method roll ( $bag: Int $num = 1 )
+ our multi method roll ( $bag: Whatever )
+
+Like an ordinary list C<roll>, but returns keys of the bag weighted
+by values, as if the keys were replicated the number of times
+indicated by the corresponding value and then list C<roll> used.
+The underlying metaphor for rolling is that you're throwing C<$num>
+dice that are independent of each other, which (in bag terms) is
+equivalent to picking a colored marble out your bag and then putting
+it back, and doing this C<$num> times.  In dice terms, the number
+of marbles corresponds to the number of sides, and the number of
+marbles of the same color corresponds to number of sides with the
+same color.  (For "picking without replacement" see C<pick> instead.)
+Rolling requires no temporary state.
 
 =back
 
@@ -861,21 +1055,61 @@ A mutable C<Bag> container, represented as C<KeyHash of UInt>.
 
 =head2 KeyHash
 
-    class KeyHash does Associative {...}
+    role KeyHash[::T, $default = Any] does Associative {...}
 
-A KeyHash represents a mutable set of values, represented as the keys
+A C<KeyHash> represents a mutable set of values, represented as the keys
 of a C<Hash>.  When asked to behave as a list it ignores its values
 and returns only C<.keys>.  C<KeySet> and C<KeyBag> are derived from
 this type, but constrain their values to be C<Bool> and C<UInt>,
 respectively.  A C<KeyHash> automatically deletes any key whose
-value goes false.
+value goes false.  For any C<KeyHash>, the C<.elems> methods returns
+the current sum of the values, which the C<KeyHash> must either track
+or compute on demand.  Tracking is preferable for efficient implementation
+of C<.pick> and C<.grab>.
+
+All C<KeyHash> containers have a default value that is false (such as
+C<0> or C<''> or C<Nil> or C<Bool::False>), and keep around only those
+entries with non-default values, deleting any entry if its value goes
+to false.
+
+=over
+
+=item grab
+
+ our multi method grab ( $bag: Int $num = 1 )
+ our multi method grab ( $bag: Whatever )
+ our multi method grabpairs ( $bag: Int $num = 1 )
+ our multi method grabpairs ( $bag: Whatever )
+
+Like C<pick>, a C<grab> returns a random selection of elements, weighted
+by the values corresponding to each key.
+Since a C<KeyHash>, unlike a C<Set> or C<Bag>, is mutable, C<.grab>
+works directly on the C<KeyHash>, modifying it in place.  (You may use
+C<.pick> to treat the C<KeyHash> as immutable; this will copy it and grab
+only from the temporary copy.)
+
+Grabbing decrements the grabbed
+key's replication value by one (deleting the key when it goes to 0).
+By definition, C<.elems> of the bag also decreases by one, so the
+probabilities stay consistent through subsequent grab operations.
+
+With the C<.grabpairs> version, the replication value of the picked
+key is forced immediately to 0, removing all marbles of that color from
+the bag, as it were.  Instead of returning keys, returns the grabbed
+values as a list of C<Pair> objects, whose keys are the deleted keys
+and whose values are the deleted replication values.
+
+=back
 
 =head2 KeyWeight
 
-A C<KeyHash of Num>; like a C<KeyBag> but may have non-integral
-weights for use in weighted picking.
+A C<KeyHash of FatRat>; like a C<KeyBag> but may have non-integral
+weights for use in weighted picking.  Keys with fractional weights
+are deleted if they go to 0.  Negative weights are not deleted, but
+the implementation may complain if it notices you attempting to use
+such a weight.
 
-=head2 junction
+=head2 Junction
 
 All method calls on junctions autothread because the type provides no public methods.
 
@@ -883,7 +1117,7 @@ All method calls on junctions autothread because the type provides no public met
 
 =item !eigenstates
 
-    method !eigenstates (Junction $j: --> List)
+    method !eigenstates (Junction $j: --> Parcel)
 
 Returns an unordered list of the values that constitute the junction (formerly
 called C<.values>). It flattens nested junctions of the same type, so
@@ -905,8 +1139,6 @@ can be unthinkingly mapped to and from a given set.  (This is why we
 discourage casual use of the eigenstates as a set.)
 
 =back
-
-
 
 =head1 Additions
 

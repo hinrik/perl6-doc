@@ -10,14 +10,14 @@ Synopsis 6: Subroutines
     Damian Conway <damian@conway.org>
     Allison Randal <al@shadowed.net>
     Larry Wall <larry@wall.org>
+    Daniel Ruoso <daniel@ruoso.com>
 
 =head1 VERSION
 
     Created: 21 Mar 2003
 
-    Last Modified: 26 Jun 2009
-    Version: 110
-
+    Last Modified: 17 Nov 2010
+    Version: 147
 
 This document summarizes Apocalypse 6, which covers subroutines and the
 new type system.
@@ -63,25 +63,184 @@ of that name in the scope of the C<proto> declaration.  A C<proto>
 also adds an implicit C<multi> to all routines of the same short
 name within its scope, unless they have an explicit modifier.
 (This is particularly useful when adding to rule sets or when attempting
-to compose conflicting methods from roles.)
+to compose conflicting methods from roles.)  Abstractly, the C<proto>
+is a generic wrapper around the dispatch to the C<multi>s.  Each C<proto>
+is instantianted into an actual dispatcher for each scope that
+needs a different candidate list.
 
 B<Only> (keyword: C<only>) routines do not share their short names
 with other routines.  This is the default modifier for all routines,
-unless a C<proto> of the same name was already in scope.
+unless a C<proto> of the same name was already in scope.  (For subs,
+the governing C<proto> must have been declared in the same file, so
+C<proto> declarations from the setting or other modules don't have
+this effect unless explicitly imported.)
 
 A modifier keyword may occur before the routine keyword in a named routine:
 
     only sub foo {...}
     proto sub foo {...}
+    dispatch sub foo {...}      # internal
     multi sub foo {...}
 
     only method bar {...}
     proto method bar {...}
+    dispatch method bar {...}   # internal
     multi method bar {...}
 
 If the routine keyword is omitted, it defaults to C<sub>.
 
 Modifier keywords cannot apply to anonymous routines.
+
+A C<proto> is a generic dispatcher, which any given scope with a unique
+candidate list will instantiate into a C<dispatch> routine.  Hence
+a C<proto> is never called directly, much like a C<role> can't be
+used as an instantiated object.
+
+When you call any routine (or method, or rule) that may have multiple
+candidates, the basic dispatcher is really only calling an "only"
+sub or method--but if there are multiple candidates, the "only" that
+will be found is really a dispatcher.  This instantiated C<dispatch>
+is always called first (at least in the abstract--this can often be
+optimized away).  In essence, a C<dispatch> is dispatched exactly
+like an C<only> sub, but the C<dispatch> itself may delegate to any
+of the candidates it is "managing".
+
+It is the C<dispatch>'s responsibility to first vet the arguments for all the
+candidates; any call that does not successfully bind the C<dispatch>'s signature fails outright.
+(Its signature is a copy of one belonging to the C<proto> from which it was instantiated.)
+The C<dispatch> does not necessarily send the original capture to its candidates, however.
+Named arguments that bind to positionals in the C<dispatch> sig will become positionals
+for all subsequent calls to its managed multis.
+
+The dispatch then considers its list of managed candidates from the
+viewpoint of the caller or object, sorts them into some order, and
+dispatches them according to the rules of multiple dispatch as defined
+for each of the various dispatchers.  In the case of multi subs, the
+candidate list is known at compile time.  In the case of multi methods,
+it may be necessary to generate (or regenerate) the candidate list at
+run time, depending on what is known when about the inheritance tree.
+
+This default dispatch behavior is symbolized within the original
+C<proto> by a block containing of a single C<*> (that is, a
+"whatever").  Hence the typical C<proto> will simply have a body
+of C<{*}>.
+
+    proto method bar {*}
+
+(We don't use C<...> for that because it would fail at run time,
+and the proto's instantiated C<dispatch> blocks are not stubs, but
+are intended to be executed.)
+
+Other statements may be inserted before and after the C<{*}>
+statement to capture control before or after the multi dispatch:
+
+    proto foo ($a,$b) { say "Called with $a $b"; {*}; say "Returning"; }
+
+(That C<proto> is only good for C<multi>s with side effects and no return
+value, since it returns the result of C<say>, which might not be what
+you want.  See below for how to fix that.)
+
+The syntactic form C<&foo> (without a modifying signature) can never
+refer to a C<multi> candidate or a generic C<proto>.  It may only
+refer to the single C<only> or C<dispatch> routine that would first
+be called by C<foo()>.  Individual C<multi>s may be named by appending
+a signature to the noun form: C<&foo:($,$,*@)>.
+
+We used the term "managed" loosely above to indicate the set of C<multi>s in
+question; the "managed set" is more accurately defined as the intersection
+of all the C<multi>s in the C<proto>'s downward scope with all the C<multi>s that
+are visible to the caller's upward-looking scope.  For ordinary routines
+this means looking down lexical scopes and looking up lexical scopes.  [This
+is more or less how C<multi>s already behave.]
+
+For methods this means looking down or up the inheritance tree; "managed set"
+in this case translates to the intersection of all methods in the C<proto>'s
+class or its subclasses with all C<multi> methods visible to the object in its
+parent classes, that is, the parent classes of the object's actual type on
+whose behalf the method was called.  [Note, this is a change from prior
+multi method semantics, which restricted multimethods to a single class;
+the old semantics is equivalent to defining a C<proto> in every class that has
+multimethods.  The new way gives the user the ability to intermix C<multi>s at
+different inheritance levels.  (The first version of Rakudo * is not expected
+to implement this).]
+
+Also, the old semantics of C<proto> providing the most-default C<multi> body
+is hereby deprecated.  Default C<multi>s should be marked with "C<is default>".
+
+It is still possible to provide default behavior in the C<proto>, however, by
+using it as a wrapper:
+
+    my proto sub foo (@args) {
+        do-something-before(@args);
+        {*}       # call into the managed set, then come back
+        do-something-after(@args);
+    }
+
+Note that this returns the value of do-something-after(), not the C<multi>.
+There are two ways to get around that.  Here's one way:
+
+    my proto sub foo (@args) {
+        ENTER do-something-before(@args);
+        {*}
+        LEAVE do-something-after(@args);
+    }
+
+Alternately, you can spell out what C<{*}> is actually sugar for,
+which would be some dispatcher macro such as:
+
+    my proto sub foo (|$cap (@args)) {
+        do-something-before(@args);
+        my |$retcap := MULTI-DISPATCH-CALLWITH($?ROUTINE,$cap);
+        do-something-after(@args);
+        return |$retcap;
+    }
+
+which optimizes (we hope) to an inlined multidispatcher to locate all
+the candidates for these arguments (hopefully memoized), create the dynamic
+scope of a dispatch, start the dispatch, manage C<callnext> and C<lastcall>
+semantics, and return the result of whichever C<multi> succeeded, if any.
+
+Which why we have C<{*}> instead.
+
+Another common variant would be to propagate control to the
+outer/higher routine that would have been found if this one didn't
+exist:
+
+    my proto method foo { {*}; UNDO nextsame; }  # failover to super foo
+
+Note that, in addition to making C<multi>s work similarly to each other,
+the new C<proto> semantics greatly simplify top-level dispatchers, which
+never have to worry about C<multi>s, because C<multi>s are always in the
+second half of the double dispatch (again, just in the abstract, since
+the first dispatch can often be optimized away, as if the C<proto> were
+inlined).  So in the abstract, C<foo()> only ever calls a single
+C<only>/C<proto> routine, and We Know Which One It Is at compile time.
+
+This is less of a shift for method dispatch, which already assumed that there
+is something like a single proto in each class that redispatches inside
+the class.  Here the change is that multi-method dispatcher needs to look
+more widely for its candidates than the current class.  But note that our
+semantics were inconsistent before, insofar as regex methods already had to
+look for this larger managed set in order to do transitive LTM correctly.
+Now the semantics of normal method C<proto>s and regex C<proto>s are nearly
+identical, apart from the fact that regex candidate lists naturally have
+fancier tiebreaking rules involving longest token matching.
+
+A C<dispatch> must be generated for every scope that contains one or more C<multi>
+declaration.  This is done by searching backwards and outwards (or up the
+inheritance chain for methods) for a C<proto> to instantiate.  If no such
+C<proto> is found, a "most generic" C<proto> will be generated, something like:
+
+    proto sub foo (*@, *%) {*}
+    proto method foo (*@, *%) {*}
+
+Obviously, no named-to-positional remapping can be done in this case.
+
+[Conjecture: we could instead autogen a more specific signature for
+each such autogenerated C<dispatch> once we know its exact candidate
+set, such that consistent use of positional parameter names is rewarded
+with positional names in the generated signature, which could remap
+named parameters.]
 
 =head2 Named subroutines
 
@@ -100,20 +259,44 @@ so this is valid Perl 6:
 
     my @subs = (sub foo { ... }, sub bar { ... });
 
+Another difference is that subroutines default to C<my> scope rather
+than C<our> scope.  However, subroutine dispatch searches lexical
+scopes outward, and subroutines are also allowed to be I<postdeclared>
+after their use, so you won't notice this much.  A subroutine that is
+not declared yet may be called using parentheses around the arguments,
+in the absence of parentheses, the subroutine call is assumed to take
+multiple arguments in the form of a list operator.
+
 =head2 Anonymous subroutines
 
 The general syntax for anonymous subroutines is:
 
     sub ( PARAMS ) TRAITS {...}
 
-But one can also use a scope modifier to introduce the return type first:
+But one can also use the C<anon> scope modifier to introduce the return type first:
 
-     my RETTYPE sub ( PARAMS ) TRAITS {...}
-    our RETTYPE sub ( PARAMS ) TRAITS {...}
+    anon RETTYPE sub ( PARAMS ) TRAITS {...}
 
-In this case there is no effective difference, since the distinction between
-C<my> and C<our> is only in the handling of the name, and in the case of
-an anonymous sub, there's isn't one.
+When an anonymous subroutine will be assigned to a scalar variable,
+the variable can be declared with the signature of the routines that
+will be assigned to it:
+
+    my $grammar_factory:(Str, int, int --> Grammar);
+    $grammar_factory = sub (Str $name, int $n, int $x --> Grammar) { ... }; 
+
+Covariance allows a routine (that has a more derived return type than what is
+defined in the scalar's signature) to be assigned to that scalar.
+Contravariance allows a routine (with parameter types that are less derived
+than those in the scalar's signature) to be assigned to that scalar. The
+compiler may choose to enforce (by type-checking) such assignments at
+compile-time, if possible. Such type annotations are intended to help the
+compiler optimize code to the extent such annotations are included and/or to
+the extent they aid in type inference.
+
+The same signature can be used to mark the type of a closure parameter to
+another subroutine:
+
+    sub (int $n, &g_fact:(Str, int, int --> Grammar) --> Str) { ... }
 
 B<Trait> is the name for a compile-time (C<is>) property.
 See L<"Properties and traits">.
@@ -125,9 +308,14 @@ You can declare a sub without parameter list, as in Perl 5:
 
     sub foo {...}
 
-This is equivalent to
+This is equivalent to one of:
 
+    sub foo () {...}
+    sub foo (*@_) {...}
+    sub foo (*%_) {...}
     sub foo (*@_, *%_) {...}
+
+depending on whether either or both of those variables are used in the body of the routine.
 
 Positional arguments implicitly come in via the C<@_> array, but
 unlike in Perl 5 they are C<readonly> aliases to actual arguments:
@@ -138,7 +326,7 @@ unlike in Perl 5 they are C<readonly> aliases to actual arguments:
 
 Also unlike in Perl 5, Perl 6 has true named arguments, which come in
 via C<%_> instead of C<@_>.  (To construct pseudo-named arguments that
-come in via C<@_> as in Perl 5, the p5-to-p6 translator will use the ugly
+come in via C<@_> as in Perl 5, the p5-to-p6 translator will define and use the ugly
 C<< p5=> >> operator instead of Perl 6's C<< => >> Pair constructor.)
 
 If you need to modify the elements of C<@_> or C<%_>, declare the
@@ -243,10 +431,14 @@ an already-defined subroutine does. If you wish to redefine a defined sub,
 you must explicitly use the "C<supersede>" declarator.  (The compiler may
 refuse to do this if it has already committed to the previous definition.)
 
-The C<...> is the "yadayadayada" operator, which is executable but returns
-a failure.  You can also use C<???> to produce a warning, or C<!!!> to
-always die.  These also officially define stub blocks if used as the
-only expression in the block.
+The C<...> is the "yadayadayada" operator, which is executable but
+returns a failure.  You can also use C<???> to produce a warning,
+or C<!!!> to always die.  These also officially define stub blocks.
+Any of these yada operators will be taken as a stub if used as the main
+operator of the first statement in the block.  (Statement modifiers
+are allowed on that statement.)  The yada operators differ from their
+respective named functions in that they all default to a message
+such as: "Unimplemented stub of sub foo was executed".
 
 It has been argued that C<...> as literal syntax is confusing when
 you might also want to use it for metasyntax within a document.
@@ -260,34 +452,54 @@ indicate that something is missing whichever way you take it.
 
 =head2 Globally scoped subroutines
 
-Subroutines and variables can be declared in the global namespace, and are
-thereafter visible everywhere in a program via the GLOBAL package.  They
-may be made directly visible by importation.
+Subroutines and variables can be declared in the global namespace
+(or any package in the global namespace), and are thereafter visible
+everywhere in the program via the GLOBAL package (or one of its
+subpackages).  They may be made directly visible by importation,
+but may not otherwise be called with a bare identifier, since subroutine
+dispatch only looks in lexical scopes.
 
 Global subroutines and variables are normally referred to by prefixing
-their identifiers with C<*> (short for "C<GLOBAL::>").
+their identifiers with the C<*> twigil, to allow dynamically scoped overrides.
 
-    $*next_id = 0;
-    sub GLOBAL::saith($text)  { print "Yea verily, $text" }
+    GLOBAL::<$next_id> = 0;
+    sub GLOBAL::saith($text)  { say "Yea verily, $text" }
 
     module A {
         my $next_id = 2;     # hides any global or package $next_id
         &*saith($next_id);   # print the lexical $next_id;
-        &*saith($*next_id);  # print the global $next_id;
+        &*saith($*next_id);  # print the dynamic $next_id;
     }
 
+To disallow dynamic overrides, you must access the globals directly:
+
+    GLOBAL::saith($GLOBAL::next_id);
+
+The fact that this is verbose is construed to be a feature.  Alternately,
+you may play aliasing tricks like this:
+
     module B {
-        use GLOBAL <$next_id>;
-        &*saith($next_id);    # Unambiguously the global $next_id
+        import GLOBAL <&saith $next_id>;
+        saith($next_id);    # Unambiguously the global definitions
     }
+
+Despite the fact that subroutine dispatch only looks in lexical scopes, you
+can always call a package subroutine directly if there's a lexical alias
+to it, as the C<our> declarator does:
+
+    module C;
+    our sub saith($text)  { say "Yea verily, $text" }
+    saith("I do!")      # okay
+    C::saith("I do!")   # also okay
 
 =head2 Dynamically scoped subroutines
 
-Similarly, you may define contextual subroutines:
+Similarly, you may define dynamically scoped subroutines:
 
-    my sub myfunc ($x) is context { ... }
+    my sub myfunc ($x) is dynamic { ... }
+    my sub &*myfunc ($x) { ... }        # same thing
 
-This may then be invoked via the syntax for contextual variables:
+This may then be invoked via the syntax for dynamic variables:
 
     &*myfunc(42);
 
@@ -330,14 +542,13 @@ the value of the proxy.
 Operators are just subroutines with special names and scoping.
 An operator name consists of a grammatical category name followed by
 a single colon followed by an operator name specified as if it were
-a hash subscript (but evaluated at compile time).  So any of these
-indicates the same binary addition operator:
+a one or more strings.  So any of these indicates the same binary addition operator:
 
     infix:<+>
     infix:«+»
     infix:<<+>>
-    infix:{'+'}
-    infix:{"+"}
+    infix:['+']
+    infix:["+"]
 
 Use the C<&> sigil just as you would on ordinary subs.
 
@@ -356,7 +567,7 @@ containing the leading and trailing delimiters is the name of the
 operator.
 
     sub circumfix:<LEFTDELIM RIGHTDELIM> ($contents) {...}
-    sub circumfix:{'LEFTDELIM','RIGHTDELIM'} ($contents) {...}
+    sub circumfix:['LEFTDELIM','RIGHTDELIM'] ($contents) {...}
 
 Contrary to Apocalypse 6, there is no longer any rule about splitting an even
 number of characters.  You must use a two-element slice.  Such names
@@ -366,12 +577,9 @@ directly (as in C<< PKG::{'infix:<+>'} >>).  Otherwise any form will
 do.  (Symbolic references do not count as direct subscripts since they
 go through a parsing process.)  The canonical form always uses angle
 brackets and a single space between slice elements.  The elements
-are not escaped, so C<< PKG::circumfix:{'<','>'} >> is canonicalized
-to C<<< PKG::{'circumfix:<< >>'} >>>, and decanonicalizing always
-involves stripping the outer angles and splitting on space, if any.
-This works because a hash key knows how long it is, so there's no
-ambiguity about where the final angle is.  And space works because
-operators are not allowed to contain spaces.
+are escaped on brackets, so C<< PKG::circumfix:['<','>'] >> is canonicalized
+to C<<< PKG::{'circumfix:<\< \>>'} >>>, and decanonicalizing may always
+be done left-to-right.
 
 Operator names can be any sequence of non-whitespace characters
 including Unicode characters. For example:
@@ -443,9 +651,9 @@ of the parameter.
 If you have a readonly parameter C<$ro>, it may never be passed on to
 a C<rw> parameter of a subcall, whether or not C<$ro> is currently
 bound to a mutable object.  It may only be rebound to readonly or
-copy parameters.  It may also be rebound to a C<ref> parameter (see
-"C<is ref>" below), but modification will fail as in the case where
-an immutable value is bound to a C<ref> parameter.
+copy parameters.  It may also be rebound to a parcel parameter (see
+"C<is parcel>" below), but modification will fail as in the case where
+an immutable value is bound to a C<parcel> parameter.
 
 Aliases of C<$ro> are also readonly, whether generated explicitly with C<:=>
 or implicitly within a C<Capture> object (which are themselves immutable).
@@ -465,6 +673,20 @@ positional parameters be kept contiguous in the call syntax, but
 this is not enforced, and custom arg list processors are certainly
 possible on those arguments that are bound to a final slurpy or
 arglist variable.)
+
+A signature containing a name collision is considered a compile time
+error. A name collision can occur between positional parameters, between
+named parameters, or between a positional parameter and a named one.
+The sigil is not considered in such a comparison, except in the case of
+two positional parameters -- in other words, a signature in which two
+or more parameters are identical except for the sigil is still OK (but
+you won't be able to pass values by that name).
+
+    :($a, $a)       # wrong, two $a
+    :($a, @a)       # OK (but don't do that)
+    :($a, :a($b))   # wrong, one a, one a through renaming
+    :($a, :a(@b))   # wrong 
+    :(:$a, :@a)     # wrong
 
 =head2 Named arguments
 
@@ -537,7 +759,7 @@ instead:
 
 The C<:p> stands for "pairs", not "positional"--the C<:p> adverb may be
 placed on any C<Associative> access subscript to make it mean "pairs" instead of "values".
-If you want the pair (or pairs) to be interpreted a named argument,
+If you want the pair (or pairs) to be interpreted as named arguments,
 you may do so by prefixing with the C<< prefix:<|> >> operator:
 
     doit |%hash<a>:p,1,2,3;
@@ -571,7 +793,7 @@ to be concatenated:
 Other sigils bind only to the I<last> argument with that name:
 
     sub fun (Int $x) { ... }
-    f( x => 1, x => 2 );                # $x := 2
+    fun( x => 1, x => 2 );              # $x := 2
     fun( x => (1, 2), x => (3, 4) );    # $x := (3, 4)
 
 This means a hash holding default values must come I<before> known named
@@ -602,8 +824,7 @@ Single-dispatch semantics may also be requested by using the indirect object syn
 after the invocant argument. The colon is just a special form of the comma, and has the
 same precedence:
 
-    set_name $obj: "Sam";   # try $obj.set_name("Sam") first, then
-                            # fall-back to set_name($obj, "Sam")
+    set_name $obj: "Sam";
     $obj.set_name("Sam");   # same as the above
 
 An invocant is the topic of the corresponding method if that formal
@@ -611,12 +832,12 @@ parameter is declared with the name C<$_>.  A method's invocant
 always has the alias C<self>.  Other styles of self can be declared
 with the C<self> pragma.
 
-If you have call of the form:
+If you have a call of the form:
 
     foo(|$capture)
 
-the compiler must defer the decision on whether to treat it as a single
-or multiple dispatch based on whether the supplied C<Capture>'s first
+the compiler must defer the decision on whether to treat it as a method
+or function dispatch based on whether the supplied C<Capture>'s first
 argument is marked as an invocant.  For ordinary calls this can
 always be determined at compile time, however.
 
@@ -762,7 +983,7 @@ Named parameters are optional unless marked with a following C<!>.
 Default values for optional named parameters are defined in the same
 way as for positional parameters, but may depend only on existing
 values, including the values of parameters that have already been
-bound.  Named optional parameters default to C<undef> if they have
+bound.  Named optional parameters default to C<Nil> if they have
 no default.  Named required parameters fail unless an argument pair
 of that name is supplied.
 
@@ -773,11 +994,11 @@ a C<:a()> argument in preference to the first positional argument.
 It might seem that performance of binding would suffer by requiring
 a named lookup before a positional lookup, but the compiler is able
 to guarantee that subs with known fixed signatures (both C<only>s and
-C<multi>s with C<proto>s) translate named arguments to positional in the
+C<proto>s) translate named arguments to positional in the
 first N positions.  Also, purely positional calls may obviously omit any
 named lookups, as may bindings that have already used up all the named
 arguments.  The compiler is also free to intuit proto signatures for
-a given sub or method name as long as the candidate list is stable..
+a given sub or method name as long as the candidate list is stable.
 
 =head2 List parameters
 
@@ -822,10 +1043,19 @@ elements of the variadic array:
 
 Slurpy scalars still impose list context on their arguments.
 
-Slurpy parameters are treated lazily -- the list is only flattened
+Single slurpy parameters are treated lazily -- the list is only flattened
 into an array when individual elements are actually accessed:
 
     @fromtwo = tail(1..Inf);        # @fromtwo contains a lazy [2..Inf]
+
+[Conjecture: However, if you use two or more slurpy arrays in a
+signature, the list is instead evaluated in hyper context, and will
+be asked to split itself into the number of lists corresponding to
+the number of slurpies so declared.  A non-hyperable list will return
+failure for this splitting operation, so the signature should only bind
+on parallelizable list operations.  Likewise a list that "too short to
+split" fails to bind, so a separate signature may match empty lists,
+and perhaps singletons, if we define "too short" that way).]
 
 You can't bind to the name of a slurpy parameter: the name is just there
 so you can refer to it within the body.
@@ -872,13 +1102,27 @@ signature:
 
     method addto (|$args ($self: @x)) { trace($args); $self += [+] @x }
 
-The inner signature is not required for non-multis since there can
+The inner signature is not required for non-C<multi>s since there can
 only be one candidate, but for multiple dispatch the inner signature
 is required at least for its types, or the declaration would not know
 what signature to match against.
 
     multi foo (|$args (Int, Bool?, *@, *%)) { reallyintfoo($args) }
     multi foo (|$args (Str, Bool?, *@, *%)) { reallystrfoo($args) }
+
+=head2 Parcel binding
+
+It is possible to bind the argument list in an even more raw form
+as a C<Parcel> object.  A signature to capture the parcel must be
+declared as:
+
+    sub foo (\|$parcel) { ... }
+
+This single parcel parameter is the only thing allowed in such a signature
+(apart from a return type).  An implementation must either be able to
+reconstruct the original parcel object from a capture, or the compiler
+must be smart enough to know when to save the original parcel object
+based on proto declarations and/or call indirection.
 
 =head2 Flattening argument lists
 
@@ -892,12 +1136,12 @@ C<Pair> and C<Hash> become named arguments:
     |(x=>1);          # Pair, becomes \(x=>1)
     |{x=>1, y=>2};    # Hash, becomes \(x=>1, y=>2)
 
-C<List> (also C<Seq>, C<Range>, etc.) are simply turned into
+Anything else that is C<Iterable> is simply turned into
 positional arguments:
 
     |(1,2,3);         # Seq, becomes \(1,2,3)
     |(1..3);          # Range, becomes \(1,2,3)
-    |(1..2, 3);       # List, becomes \(1,2,3)
+    |(1..2, 3);       # Parcel, becomes \(1,2,3)
     |([x=>1, x=>2]);  # List (from an Array), becomes \((x=>1), (x=>2))
 
 For example:
@@ -911,10 +1155,11 @@ For example:
 
 The C<|> operator flattens lazily -- the array is flattened only if
 flattening is actually required within the subroutine. To flatten before
-the list is even passed into the subroutine, use the C<eager> list
+the list is even passed into the subroutine, use the C<flat> list
 operator:
 
-    foo(|eager @onetothree);          # array flattened before &foo called
+    foo(|flat 1,2,3 Z 4,5,6);    # zip list flattened before interpolation
+    foo |(1,2,3 Z 4,5,6).flat    # same thing
 
 
 =head2 Multidimensional argument list binding
@@ -923,9 +1168,9 @@ Some functions take more than one list of positional and/or named arguments,
 that they wish not to be flattened into one list.  For instance, C<zip()> wants
 to iterate several lists in parallel, while array and hash subscripts want to
 process a multidimensional slice.  The set of underlying argument lists may be
-bound to a single array parameter declared with a double C<@@> sigil:
+bound to a single array parameter declared with a double C<**> marker:
 
-    sub foo (*@@slice) { ... }
+    sub foo (**@slice) { ... }
 
 Note that this is different from
 
@@ -933,7 +1178,7 @@ Note that this is different from
 
 insofar as C<|$slice> is bound to a single argument-list object that
 makes no commitment to processing its structure (and maybe doesn't
-even know its own structure yet), while C<*@@slice> has to create
+even know its own structure yet), while C<**@slice> has to create
 an array that binds the incoming dimensional lists to the array's
 dimensions, and make that commitment visible to the rest of the scope
 via the sigil so that constructs expecting multidimensional lists
@@ -941,16 +1186,17 @@ know that multidimensionality is the intention.
 
 It is allowed to specify a return type:
 
-    sub foo (*@@slice --> Num) { ... }
+    sub foo (**@slice --> Num) { ... }
 
 The invocant does not participate in multi-dimensional argument lists,
-so C<self> is not present in the C<@@slice> below:
+so C<self> is not present in the C<**@slice> below:
 
-    method foo (*@@slice) { ... }
+    method foo (**@slice) { ... }
 
-The C<@@> sigil is just a variant of the C<@> sigil, so C<@@slice>
-and C<@slice> are really the same array.  In particular, C<@@_> is
-really the good old C<@_> array viewed as multidimensional.
+The C<**> marker is just a variant of the C<*> marker that ends up
+requesting parcels when binding (underlyingly calling C<.getarg>) rather
+than requesting individual elements as the flatening C<*> does (underlyingly
+calling C<.get>).
 
 =head2 Zero-dimensional argument list
 
@@ -958,9 +1204,9 @@ If you call a function without parens and supply no arguments, the
 argument list becomes a zero-dimensional slice.  It differs from
 C<\()> in several ways:
 
-    sub foo (*@@slice) {...}
-    foo;        # +@@slice == 0
-    foo();      # +@@slice == 1
+    sub foo (**@slice) {...}
+    foo;        # +@slice == 0
+    foo();      # +@slice == 1
 
     sub bar (|$args = \(1,2,3)) {...}
     bar;        # $args === \(1,2,3)
@@ -1077,7 +1323,7 @@ with C<*> as an argument may be used to indicate the target of a
 feed without the use of a temporary array:
 
     foo() ==> say @(*), " is what I meant";
-    bar() ==> @@(*).baz();
+    bar() ==> @(*).baz();
 
 Likewise, an C<Array> used as a tap may be distinguished from an C<Array> used
 as a translation function:
@@ -1085,15 +1331,18 @@ as a translation function:
     numbers() ==> @array ==> bar()          # tap
     numbers() ==> @array[@(*)] ==> bar()    # translation
 
-Feeding into the C<*> "whatever" term sets the source for the next sink.
 To append multiple sources to the next sink, double the angle:
 
-    0..*       ==>  *;
-    'a'..*     ==>> *;
-    pidigits() ==>> *;
+    my $sink;
+    0..*       ==>  $sink;
+    'a'..*     ==>> $sink;
+    pidigits() ==>> $sink;
 
     # outputs "(0, 'a', 3)\n"...
-    for zip(@@(*)) { .perl.say }
+    for $sink.zip { .perl.say }
+
+Each such append adds another slice element (that is, a parcel), to
+the sink.  (The original feed also created a parcel.)
 
 You may use a variable (or variable declaration) as a receiver, in
 which case the list value is bound as the "todo" of the variable.
@@ -1103,7 +1352,9 @@ Think of it as iterator creation.  In the case of a scalar variable,
 that variable contains the newly created iterator itself.  In the case
 of an array, the new iterator is installed as the method for extending
 the array.  As with assignment, the old todo list is clobbered; use the
-append form to avoid that and get push semantics.
+append form to avoid that and get push semantics.  In any case, feeding
+an array always flattens.  You must use the scalar form to preserve
+slice information.
 
 In general you can simply think of a receiver array as representing
 the results of the chain, so you can equivalently write any of:
@@ -1139,15 +1390,15 @@ Note how the feeds are concatenated in C<@foo> so that C<@foo>
 is a list of 6 elements.  This is the default behavior.  However,
 sometimes you want to capture the outputs as a list of two iterators,
 namely the two iterators that represent the two input feeds.  You can
-get at those two iterators by using the name C<@@foo> instead, where
-the "slice" sigil marks a multidimensional array, that is, an
-array of lists, each of which may be treated independently.
+get at those two iterators by using a scalar instead, which
+will preserve the slice structure, which can be fed to any operation
+that knows how to deal with a list of parcels as a slice, such as C<zip>:
 
-    0..*       ==>  @@foo;
-    'a'..*     ==>> @@foo;
-    pidigits() ==>> @@foo;
+    0..*       ==>  $foo;
+    'a'..*     ==>> $foo;
+    pidigits() ==>> $foo;
 
-    for zip(@@foo) { .say }
+    for $foo.zip { .say }
 
         [0,'a',3]
         [1,'b',1]
@@ -1157,19 +1408,20 @@ array of lists, each of which may be treated independently.
         [5,'f',9]
         ...
 
-Here C<@@foo> is an array of three iterators, so
+Here C<$foo> is a list of three parcels, so
 
-    zip(@@foo)
+    $foo.zip
 
 is equivalent to
 
-    zip(@@foo[0]; @@foo[1]; @@foo[2])
+    my (@a,@b,@c) := |$foo;
+    zip(@a; @b; @c)
 
 A semicolon inside brackets is equivalent to stacked feeds.  The code above
 could be rewritten as:
 
-    (0..*; 'a'..*; pidigits()) ==> my @@foo;
-    for @@foo.zip { .say }
+    (0..*; 'a'..*; pidigits()) ==> my $foo;
+    for $foo.zip { .say }
 
 which is in turn equivalent to
 
@@ -1183,62 +1435,66 @@ clear where the feed's destination is supposed to be:
     my @foo = @bar[@baz];
 
 Various contexts may or may not be expecting multi-dimensional slices
-or feeds.  By default, ordinary arrays are flattened, that is, they
+or feeds.  By default, ordinary arrays are flattened in slurpy context, that is, they
 have "list" semantics.  If you say
 
     (0..2; 'a'..'c') ==> my @tmp;
     for @tmp { .say }
 
 then you get 0,1,2,'a','b','c'.  If you have a multidim array, you
-can ask for list semantics explicitly with list():
+can ask for flattening semantics explicitly with C<flat>:
 
-    (0..2; 'a'..'c') ==> my @@tmp;
-    for @@tmp.list { .say }
+    (0..2; 'a'..'c') ==> my $tmp;
+    for $tmp.flat { .say }
 
 As we saw earlier, "zip" produces an interleaved result by taking one element
 from each list in turn, so
 
-    (0..2; 'a'..'c') ==> my @@tmp;
-    for @@tmp.zip { .say }
+    (0..2; 'a'..'c') ==> my $tmp;
+    for $tmp.zip { .say }
 
 produces 0,'a',1,'b',2,'c'.
 
-If you want the result as a list of subarrays, then you need to put
-the zip into a "chunky" context instead:
+If you want the zip's result as a list of subarrays, then you need to put
+the zip itself into a "chunky" C<LoL> context instead:
 
-    (0..2; 'a'..'c') ==> my @@tmp;
-    for @@tmp.zip.@@() { .say }
+    (0..2; 'a'..'c') ==> my $tmp;
+    for $tmp.zip.lol { .say }
 
-This produces [0,'a'],[1,'b'],[2,'c'].  But usually you want the flat
+This produces two values on each line.  But usually you want the flat
 form so you can just bind it directly to a signature:
 
-    for @@tmp.zip -> $i, $a { say "$i: $a" }
+    for $tmp.zip -> $i, $a { say "$i: $a" }
 
 Otherwise you'd have to say this:
 
-    for @@tmp.zip.slice -> [$i, $a] { say "$i: $a" }
+    for $tmp.zip.lol -> [$i, $a] { say "$i: $a" }
 
-In list context the C<@@foo> notation is really a shorthand for C<[;](@@foo)>.
-In particular, you can use C<@@foo> to interpolate a multidimensional slice
-in an array or hash subscript.
+Conjectural: To interpolate a feed into a subscript such that the
+slice turns into multiple subscripts, you need to use C<< prefix:<||> >>,
+which works just like prefix:<|> except that it interpolates at the slice
+level rather than the flat list level:
 
-If C<@@foo> is currently empty, then C<for zip(@@foo) {...}> acts on a
-zero-dimensional slice (i.e. C<for (zip) {...}>), and outputs nothing
-at all.
+    (0..10; 0..10).zip
+    zip(0..10; 0..10)
+    (0..10; 0..10) ==> zip( ||@(*) )
+    (0..10; 0..10) ==> $feed; zip( ||$feed )
+
+Usually it's better to just use the method form.
 
 Note that with the current definition, the order of feeds is preserved
 left to right in general regardless of the position of the receiver.
 
 So
 
-    ('a'..*; 0..*) ==> *;
-     for zip(@@(*) <== @foo) -> $a, $i, $x { ... }
+    ('a'..*; 0..*) ==> $feed;
+     for $feed.zip <== @foo) -> $a, $i, $x { ... }
 
 is the same as
 
-    'a'..* ==> *;
-     0..*  ==> *;
-     for zip(@@(*) <== @foo) -> $a, $i, $x { ... }
+    'a'..* ==> $feed;
+     0..*  ==>> $feed;
+     for $feed.zip <== @foo) -> $a, $i, $x { ... }
 
 which is the same as
 
@@ -1248,14 +1504,6 @@ Also note that these come out to be identical for ordinary arrays:
 
     @foo.zip
     @foo.cat
-
-The C<@@($foo)> coercer can be used to pull a multidim out of some
-object that contains one, such as a C<Capture> or C<Match> object.  Like
-C<@()>, C<@@()> defaults to C<@@($/)>, and returns a multidimensional
-view of any match that repeatedly applies itself with C<:g> and
-the like.  In contrast, C<@()> would flatten those into one list.
-It is an error to use C<@(*)> or C<@@(*)> in a context that doesn't
-supply a feed somehow.
 
 =head2 Closure parameters
 
@@ -1293,26 +1541,35 @@ When an argument is passed to a closure parameter that has this kind of
 signature, the argument must be a C<Code> object with a compatible
 parameter list and return type.
 
-=head2 Type parameters
+=head2 En passant type capture
 
 Unlike normal parameters, type parameters often come in piggybacked
 on the actual value as "kind", and you'd like a way to capture both
-the value and its kind at once.  (A "kind" is a class or type that
+the value and its kind at once.  (A "kind" is a storage type, that is, a class or type that
 an object is allowed to be.  An object is not officially allowed
 to take on a constrained or contravariant type.)  A type variable
 can be used anywhere a type name can, but instead of asserting that
 the value must conform to a particular type, it captures the
 actual "kind" of the object and also declares a package/type name
 by which you can refer to that kind later in the signature or body.
+In addition, it captures the nominal typing of any associated nominal
+type.
 For instance, if you wanted to match any two Dogs as long as they
 were of the same kind, you can say:
 
     sub matchedset (Dog ::T $fido, T $spot) {...}
 
-(Note that C<::T> is not required to contain C<Dog>, only
-a type that is compatible with C<Dog>.)
+This actually turns into something more like
 
-The C<::> sigil is short for "subset" in much the same way that C<&> is
+    sub matchedset (Dog ::T $fido, Dog $spot where T) {...}
+
+Note that C<::T> is not required to contain C<Dog>, only
+a type that is compatible with C<Dog>.  Note also that the nominal
+type, C<Dog>, is also included in the meaning of C<T>, along
+with the notion that the actual type must match the storage
+type of C<$fido>.
+
+The C<::> quasi-sigil is short for "subset" in much the same way that C<&> is
 short for "sub".  Just as C<&> can be used to name any kind of code,
 so too C<::> can be used to name any kind of type.  Both of them insert
 a bare identifier into the symbol table, though they fill different syntactic
@@ -1327,7 +1584,11 @@ if we're not interested in C<$fido> or C<$spot>.  Or just
 
     sub matchedset (::T, T) {...}
 
-if we don't care about anything but the matching.
+if we don't care about anything but the matching.  Note here that
+the second parameter may be more derived than the first.  If you
+need them to be identical, you must say something like
+
+    sub matchedset (::T, $ where { $_.WHAT === T }
 
 =head2 Unpacking array parameters
 
@@ -1382,6 +1643,7 @@ the reverse transformation is not derivable.  For instance, to bind to
 an array of children named C<.kids> or C<< .<kids> >>, use something
 like:
 
+    proto traverse ($) {*}
     multi traverse ( NAry $top ( :kids [$eldest, *@siblings] ) ) {
         traverse($eldest);
         traverse(:kids(@siblings));  # (binds @siblings to $top)
@@ -1467,13 +1729,29 @@ sigil (like an attribute):
 
     submethod initialize($.name, $!age) {}
 
-then the argument is assigned directly to the object's attribute of the
+then the argument is bound directly to the object's attribute of the
 same name. This avoids the frequent need to write code like:
 
     submethod initialize($name, $age) {
         $.name = $name;
         $!age  = $age;
     }
+
+The initialization of attributes requires special care to preserve
+encapsulation; therefore the default for attributive parameters is
+value semantics, that is, as if specified with C<is copy>.  Hence,
+the submethod above is really more like:
+
+    submethod initialize($name is copy, $age is copy) {
+        $.name := $name;      # or maybe = here, since it's a parent's attr
+        $!age  := $age;       # or maybe only $! parameters work really
+    }
+
+If you wish to allow the user to initialize an attribute by reference,
+you may either write your own initializer submethod explicitly, or
+simply mark the attributes you want to work that way with C<is ref>:
+
+    has $!age is ref;   # BUILD will automatically use ref binding, not copy
 
 To rename an attribute parameter you can use the explicit pair form:
 
@@ -1517,9 +1795,18 @@ Positional placeholder names consisting of a single uppercase letter are disallo
 not because we're mean, but because it helps us catch references to
 obsolete Perl 5 variables such as C<$^O>.
 
-A function containing placeholders may also refer to either C<@_>
-or C<%_> or both, each of which (if so used) will be added to the
-signature as a normal readonly slurpy pararmeter:
+The C<$_> variable functions as a placeholder in a block without any
+other placeholders or signature.  Any bare block without placeholders
+really has a parameter like this:
+
+    -> \$_ = OUTER::<$_> { .mumble }
+
+(However, statement control C<if> notices this and passes no argument,
+so C<$_> ends up being bound to the outer C<$_> anyway.)
+
+A block may also refer to either C<@_> or C<%_> or both, each of
+which will be added to generated signature as a normal readonly
+slurpy pararmeter:
 
     { say $:what; warn "bad option: $_\n" for keys %_; }
 
@@ -1529,13 +1816,51 @@ turns into
 
 If not used, they are not added, and a dispatch with mispatched parameters will fail.
 
-Placeholders may also be used in method bodies that have no formal signature.
+The use of a P5ish C<@_> in a signatureless sub falls naturally out of this:
+
+    sub sayall { .say for @_ }
+
+Note that in this case, C<$_> is not treated as a placeholder because
+there is already the C<@_> placeholder.  And C<@_> is a placeholder
+only because the sub has no official signature.  Otherwise it would
+be illegal (unless explicitly declared).
+
+Placeholders may also be used in method bodies that have no
+formal signature.  The invocant is always removed first, so the
+first placeholder argument always refers to the first non-invocant
+argument.  C<@_> will never contain the invocant.  The invocant is
+always available via C<self>, of course.
 
 Since the placeholder declares a parameter variable without the twigil,
 the twigil is needed only on the first occurrence of the variable within
 the block.  Subsequent mentions of that variable may omit the twigil.
 Within an internal nested block the twigil I<must> be omitted, since
 it would wrongly attach to the inner block.
+
+Note that, unlike in Perl 5, C<@_> may not be used within an inner block to
+refer to the outer block's arguments:
+
+    sub say-or-print {
+        if $SAYIT {
+            say @_;     # WRONG
+        }
+        else {
+            print @_;   # WRONG
+        }
+    }
+
+because this desugars to:
+
+    sub say-or-print {
+        if $SAYIT -> *@_ {
+            say @_;
+        }
+        else -> *@_ {
+            print @_;
+        }
+    }
+
+Translators of Perl 5 will need to bear this in mind.
 
 =head1 Properties and traits
 
@@ -1573,9 +1898,9 @@ auxiliary you use, but for C<is>, the subsequent syntax is identical to
 adverbial syntax, except that that colon may be omitted or doubled depending
 on the degree of ambiguity desired:
 
-    is ::Foo[...]       # definitely a parameterized typename
-    is :Foo[...]        # definitely a pair with a list
-    is Foo[...]         # depends on whether Foo is predeclared as type
+    sub x() is ::Foo[...]       # definitely a parameterized typename
+    sub x() is :Foo[...]        # definitely a pair with a list
+    sub x() is Foo[...]         # depends on whether Foo is predeclared as type
 
 =over
 
@@ -1666,12 +1991,6 @@ sub's argument capture to write your own memoization with complete
 control from within the subroutine itself, or from within a wrapper
 around your subroutine.
 
-=item C<is inline>
-
-I<Suggests> to the compiler that the subroutine is a candidate for
-optimization via inlining.  Basically promises that nobody is going
-to try to wrap this subroutine (or that if they do, you don't care).
-
 =item C<is tighter>/C<is looser>/C<is equiv>
 
 Specifies the precedence of an operator relative to an existing
@@ -1701,16 +2020,16 @@ C<equiv> may be useful for cloning other traits of these operators.)
     circumfix:<( )>
     dotty:<.>
     infix:<+>
-    infix_circumfix_meta_operator:{'»','«'}
+    infix_circumfix_meta_operator:['»','«']
     infix_postfix_meta_operator:<=>
     infix_prefix_meta_operator:<!>
     package_declarator:<class>
     postcircumfix:<( )>
     postfix:<++>
-    postfix_prefix_meta_operator:{'»'}
+    postfix_prefix_meta_operator:['»']
     prefix:<++>
-    prefix_circumfix_meta_operator:{'[',']'}
-    prefix_postfix_meta_operator:{'«'}
+    prefix_circumfix_meta_operator:['[',']']
+    prefix_postfix_meta_operator:['«']
     q_backslash:<\\>
     qq_backslash:<n>
     quote_mod:<c>
@@ -1797,26 +2116,27 @@ C<equiv> consistent with the associativity, as shown in the final column above.
 
 =item C<PRE>/C<POST>
 
-Mark blocks that are to be unconditionally executed before/after
-the subroutine's C<do> block. These blocks must return a true value,
-otherwise an exception is thrown.
+These phasers declare statements or blocks that are to be unconditionally
+executed before/after the subroutine's C<do> block. They must return
+a true value, otherwise an exception is thrown.
 
 When applied to a method, the semantics provide support for the
 "Design by Contract" style of OO programming: a precondition of
-a particular method is met if all the C<PRE> blocks associated
+a particular method is met if all the C<PRE> phasers associated
 with that method return true.  Otherwise, the precondition is met
 if C<all> of the parent classes' preconditions are met (which may
 include the preconditions of I<their> parent classes if they fail,
 and so on recursively.)
 
-In contrast, a method's postcondition is met if all the method's C<POST> blocks
+In contrast, a method's postcondition is met if all the method's C<POST> phasers
 return true I<and> all its parents' postconditions are also met recursively.
 
-C<POST> blocks (and "C<will post>" block traits) declared within a C<PRE>
+C<POST> phasers (and "C<will post>" phaser traits) declared within a C<PRE>
 or C<ENTER> block are automatically hoisted outward to be called at the
-same time as other C<POST> blocks.  This conveniently gives "circum"
+same time as other C<POST> phasers.  This conveniently gives "circum"
 semantics by virtue of wrapping the post lexical scope within the pre
-lexical scope.
+lexical scope.  That is, the C<POST> closes over its outer scope, even
+if that scope is gone by the time the C<POST> is run.
 
     method push ($new_item) {
         ENTER {
@@ -1836,20 +2156,28 @@ lexical scope.
         return pop @.items;
     }
 
-[Conjecture: class and module invariants can similarly be supplied
-by embedding C<POST>/C<post> declarations in a C<FOREIGN> block that
-only runs when any routine of this module is called from "outside"
-the current module or type, however that's defined.  The C<FOREIGN> block
-itself could perhaps refine the concept of what is foreign, much like
-an exception handler.]
+Note that C<self> is available in phasers defined within methods.
+
+Class invariants are declared with C<PRE>/C<POST> submethods instead of phasers.
+
+Module invariants are declared with C<PRE>/C<POST> subs or protos.
+
+[Conjecture: class and module invariants can applied more selectively
+by marking C<PRE>/C<POST> declarations with a C<selective> trait that
+stops it from running on internal calls (which might allow temporary
+violations of invariants), but enforces the invariants when any routine
+of this module is called from "outside" the current module or type,
+however that's defined.  There could be arguments to this trait that
+could refine the concept of what is foreign.]
 
 =item C<ENTER>/C<LEAVE>/C<KEEP>/C<UNDO>/etc.
 
-These supply closures that are to be conditionally executed before or
+These phasers supply code that is to be conditionally executed before or
 after the subroutine's C<do> block (only if used at the outermost level
-within the subroutine; technically, these are block traits on the C<do>
-block, not subroutine traits).  These blocks are generally used only
-for their side effects, since most return values will be ignored.
+within the subroutine; technically, these are added to the block traits on the C<do>
+block, not the subroutine object).  These phasers are generally used only
+for their side effects, since most return values will be ignored.  (Phasers
+that run before normal execution may be used for their values, however.)
 
 =back
 
@@ -1873,7 +2201,12 @@ to a readonly parameter never triggers autovivification.
 
 Specifies that the parameter can be modified (assigned to, incremented,
 etc). Requires that the corresponding argument is an lvalue or can be
-converted to one.
+converted to one.  Since this option forces an argument to be required,
+it cannot co-exist with the C<?> mark to make an argument optional.
+(It may, however, be used with C<=> indicating a default, but only
+if the default expression represents something that is nameable at
+compile time and that can bind as an lvalue, such as
+C<< CALLER::<$/> >> or C<< OUTER::<$_> >>.)
 
 When applied to a variadic parameter, the C<rw> trait applies to each
 element of the list:
@@ -1883,12 +2216,27 @@ element of the list:
 (The variadic array as a whole is always modifiable, but such
 modifications have no effect on the original argument list.)
 
-=item C<is ref>
+=item C<is parcel>
 
-Specifies that the parameter is passed by reference. Unlike C<is rw>, the
-corresponding argument must already be a suitable lvalue. No attempt at
-coercion or autovivification is made, so unsuitable values throw an
-exception if you try to modify them within the body of the routine.
+Specifies that the parameter is passed as a "parcel", that is, as a
+raw reference to a "parenthetical cell" or "parse list", an argument
+object that has not yet had a context imposed.  (It may or may not
+actually be of the C<Parcel> type, since a C<Parcel> containing only
+one object automatically unwraps itself to be that object directly.)
+In other words, this provides for lazy contextualization even through
+function calls.  This is important if you wish to pass the parameter
+onward to something else that will determine its context later.
+
+You may modify the argument, but only if argument is already a suitable
+lvalue since, unlike C<rw>, no attempt at autovivification is made,
+so unsuitable lvalues will throw an exception if you try to modify
+them within the body of the routine.  That is, if autovivification
+happens, it happens at the point of use, not at the point of binding.
+
+For better visual distinction, such a parameter is declared by
+prefixing with a backslash rather than by using C<is parcel> directly.
+The backslash is also more succint; the trait is there primarily
+for introspection.
 
 =item C<is copy>
 
@@ -1901,17 +2249,93 @@ original argument. This is commonly known as "pass-by-value".
 
 Binding to a copy parameter never triggers autovivification.
 
-=item C<is context(I<ACCESS>)>
+=item C<is dynamic>
 
 Specifies that the parameter is to be treated as an "environmental"
 variable, that is, a lexical that is accessible from the dynamic
-scope (see S02).  If I<ACCESS> is omitted, defaults to readonly in
-any portions of the dynamic scope outside the current lexical scope.
+scope (see S02).
 
 =back
 
+=head2 Signature Introspection
+
+A C<Signature> object can be introspected to find out the details of
+the parameters it is defined as expected. The C<.params> method will
+return a C<Parcel> of C<Parameter> objects, which have the following
+readonly properties:
+
+  name           The name of the lexical variable to bind to, if any
+  type           The main type (the one multi-dispatch sorts by)
+  constraints    Any further type constraints
+  type_captures  List of names the argument type is captured into
+  readonly       True if the parameter has C<is readonly> trait
+  rw             True if the parameter has C<is rw> trait
+  copy           True if the parameter has C<is copy> trait
+  named          True if the parameter is to be passed named
+  named_names    List of names a named parameter can be passed as
+  capture        True if the paramater binds the caller's Capture
+  parcel         True if the parameter is too lazy to contextualize
+  slurpy         True if the parameter is slurpy
+  optional       True if the parameter is optional
+  default        A closure returning the default value
+  invocant       True if the parameter is a method invocant
+  multi_invocant True if the parameter is a multi invocant
+  signature      A nested signature to bind the argument against
+
+Note that C<constraints> will be something that can be smart-matched
+against if it is defined; if there are many constraints it may be a
+C<Junction> of some sort, but if there is just one it may be simply
+that one thing.
+
+Further, various things that appear in an original written signature
+will have been deconstructed a bit. For example, a signature like:
+
+  :(1)
+
+Will introspect the same way as:
+
+  :(Int $ where 1)
+
+And if we have:
+
+  subset Odd of Int where { $^n % 2 };
+  sub foo(Odd $x) { ... }
+
+Then the signature of foo will be equivalent to something like:
+
+  :(Int $x where { $^n % 2 })
+
+That is, the refinement type will have been deconstructed into the
+part that nominal type that multiple dispatch uses for sorting the
+candidates and an additional constraint.
+
 
 =head1 Advanced subroutine features
+
+=head2 Processing of returned values
+
+It is a general policy that lvalues should only be returned up the dynamic
+call stack if specifically requested.  Therefore, by default the returned
+arguments are processed to enforce this, both for the implicit return from
+the last statement of any block, as well as the explicit return done by
+operators such as:
+
+    return
+    leave
+    take
+
+Specifically, this processing involves examining the returned parcel's
+arguments and dereferencing any container that could be used as an lvalue,
+replacing it with the container's value.
+
+To override this processing for a routine, it must be declared C<rw>, or
+the form C<return-rw> must be used.
+
+To override for a C<gather>, use C<gather-rw> instead, or C<take-rw> on the
+individual take.
+
+Since blocks don't generally have traits, you must use C<leave-rw> to pass
+an lvalue out of a block.
 
 =head2 The C<return> function
 
@@ -1963,42 +2387,35 @@ list in list context.  This is the default behavior, but the
 caller may use C<< prefix:<|> >> to inline the returned values as part of the
 new argument list.  The caller may also bind the returned C<Capture> directly.
 
-If any function called as part of a return list asks what its context
-is, it will be told it was called in list context regardless of the
-eventual binding of the returned C<Capture>.  (This is quite
-different from Perl 5, where a C<return> statement always propagates its
-caller's context to its own argument(s).)  If that is not the
-desired behavior you must coerce the call to an appropriate context,
-(or declare the return type of the function to perform such a coercion).
-In any event, such a function is called only once at the time the
+A function is called only once at the time the
 C<Capture> object is generated, not when it is later bound (which
 could happen more than once).
 
-=head2 The C<context> and C<caller> functions
+=head2 The C<callframe> and C<caller> functions
 
-The C<context> function takes a list of matchers and interprets them
-as a navigation path from the current context to a location in the
-dynamic scope, either the current context itself or some context
-from which the current context was called.  It returns an object
-that describes that particular dynamic scope, or a false value if
+The C<callframe> function takes a list of matchers and interprets them
+as a navigation path from the current call frame to a location in the
+call stack, either the current call frame itself or some frame
+from which the current frame was called.  It returns an object
+that describes that particular call frame, or a false value if
 there is no such scope.  Numeric arguments are interpreted as number
-of contexts to skip, while non-numeric arguments scan outward for a
-context matching the argument as a smartmatch.
+of frames to skip, while non-numeric arguments scan outward for a
+frame matching the argument as a smartmatch.
 
-The current context is accessed with a null argument list.
+The current frame is accessed with a null argument list.
 
-    say " file ", context().file,
-        " line ", context().line;
+    say " file ", callframe().file,
+        " line ", callframe().line;
 
 which is equivalent to:
 
-    say " file ", CONTEXT::<$?FILE>,
-        " line ", CONTEXT::<$?LINE>;
+    say " file ", DYNAMIC::<$?FILE>,
+        " line ", DYNAMIC::<$?LINE>;
 
-The immediate caller of this context is accessed by skipping one level:
+The immediate caller of this frame is accessed by skipping one level:
 
-    say " file ", context(1).file,
-        " line ", context(1).line;
+    say " file ", callframe(1).file,
+        " line ", callframe(1).line;
 
 You might think that that must be the current function's caller,
 but that's not necessarily so.  This might return an outer block in
@@ -2006,60 +2423,60 @@ our own routine, or even some function elsewhere that implements a
 control operator on behalf of our block.  To get outside your current
 routine, see C<caller> below.
 
-The C<context> function may be given arguments
+The C<callframe> function may be given arguments
 telling it which higher scope to look for.  Each argument is processed
 in order, left to right.  Note that C<Any> and C<0> are no-ops:
 
-    $ctx = context();        # currently running context for &?BLOCK
-    $ctx = context(Any);     # currently running context for &?BLOCK
-    $ctx = context(Any,Any); # currently running context for &?BLOCK
-    $ctx = context(1);       # my context's context
-    $ctx = context(2);       # my context's context's context
-    $ctx = context(3);       # my context's context's context's context
-    $ctx = context(1,0,1,1); # my context's context's context's context
-    $ctx = context($i);      # $i'th context
+    $ctx = callframe();        # currently running frame for &?BLOCK
+    $ctx = callframe(Any);     # currently running frame for &?BLOCK
+    $ctx = callframe(Any,Any); # currently running frame for &?BLOCK
+    $ctx = callframe(1);       # my frame's caller
+    $ctx = callframe(2);       # my frame's caller's caller
+    $ctx = callframe(3);       # my frame's caller's caller's caller
+    $ctx = callframe(1,0,1,1); # my frames's caller's caller's caller
+    $ctx = callframe($i);      # $i'th caller
 
 Note also that negative numbers are allowed as long as you stay within
-the existing context stack:
+the existing call stack:
 
-    $ctx = context(4,-1);    # my context's context's context's context
+    $ctx = callframe(4,-1);    # my frames's caller's caller's caller
 
-Repeating any smartmatch just matches the same context again unless you
+Repeating any smartmatch just matches the same frame again unless you
 intersperse a 1 to skip the current level:
 
-    $ctx = context(Method);              # nearest context that is method
-    $ctx = context(Method,Method);       # nearest context that is method
-    $ctx = context(Method,1,Method);     # 2nd nearest method context
-    $ctx = context(Method,1,Method,1)    # caller of that 2nd nearest method
-    $ctx = context(1,Block);             # nearest outer context that is block
-    $ctx = context(Sub,1,Sub,1,Sub);     # 3rd nearest sub context
-    $ctx = context({ .labels.any eq 'Foo' }); # nearest context labeled 'Foo'
+    $ctx = callframe(Method);              # nearest frame that is method
+    $ctx = callframe(Method,Method);       # nearest frame that is method
+    $ctx = callframe(Method,1,Method);     # 2nd nearest method frame
+    $ctx = callframe(Method,1,Method,1)    # caller of that 2nd nearest method
+    $ctx = callframe(1,Block);             # nearest outer frame that is block
+    $ctx = callframe(Sub,1,Sub,1,Sub);     # 3rd nearest sub frame
+    $ctx = callframe({ .labels.any eq 'Foo' }); # nearest frame labeled 'Foo'
 
 Note that this last potentially differs from the answer returned by
 
-    Foo.context
+    Foo.callframe
 
-which returns the context of the innermost C<Foo> block in the lexical scope
-rather than the dynamic scope.  A context also responds to the C<.context>
-method, so a given context may be used as the basis for further navigation:
+which returns the frame of the innermost C<Foo> block in the lexical scope
+rather than the dynamic scope.  A call frame also responds to the C<.callframe>
+method, so a given frame may be used as the basis for further navigation:
 
-    $ctx = context(Method,1,Method);
-    $ctx = context(Method).context(1).context(Method);     # same
+    $ctx = callframe(Method,1,Method);
+    $ctx = callframe(Method).callframe(1).callframe(Method);     # same
 
-You must supply args to get anywhere else, since C<.context> is
+You must supply args to get anywhere else, since C<.callframe> is
 the identity operator when called on something that is already
 a C<Context>:
 
-    $ctx = context;
-    $ctx = context.context.context.context;                # same
+    $ctx = callframe;
+    $ctx = callframe.callframe.callframe.callframe;                # same
 
 The C<caller> function is special-cased to go outward just far enough
 to escape from the current routine scope, after first ignoring any
 inner blocks that are embedded, or are otherwise pretending to be "inline":
 
-    &caller ::= &context.assuming({ !.inline }, 1);
+    &caller ::= &callframe.assuming({ !.inline }, 1);
 
-Note that this is usually the same as C<context(&?ROUTINE,1)>,
+Note that this is usually the same as C<callframe(&?ROUTINE,1)>,
 but not always.  A call to a returned closure might not even have
 C<&?ROUTINE> in its dynamic scope anymore, but it still has a caller.
 
@@ -2074,8 +2491,8 @@ which is equivalent to:
         " line ", CALLER::<$?LINE>;
 
 Additional arguments to C<caller> are treated as navigational from the
-calling context.  One context out from your current routine is I<not>
-guaranteed to be a C<Routine> context.  You must say C<caller(Routine)>
+calling frame.  One frame out from your current routine is I<not>
+guaranteed to be a C<Routine> frame.  You must say C<caller(Routine)>
 to get to the next-most-inner routine.
 
 Note that C<caller(Routine).line> is not necessarily going to give you the
@@ -2084,25 +2501,24 @@ likely to get the line number of the topmost block that is executing
 within that outer routine, where that block contains the call to
 your routine.
 
-For either C<context> or C<caller>,
-the returned context object supports at least the following methods:
+For either C<callframe> or C<caller>,
+the returned CallFrame object supports at least the following methods:
 
-    .context
+    .callframe
     .caller
     .leave
-    .want
     .inline
     .package
     .file
     .line
     .my
     .hints
+    .args
 
-The C<.context> and C<.caller> methods work the same as the functions
-except that they are relative to the context supplied as invocant.
+The C<.callframe> and C<.caller> methods work the same as the functions
+except that they are relative to the frame supplied as invocant.
 The C<.leave> method can force an immediate return from the
-specified context.  The C<.want> method returns known smart-matchable
-characteristics of the specified context.
+specified call frame.
 
 The C<.inline> method says whether this block was entered implicitly
 by some surrounding control structure.  Any time you invoke a block or
@@ -2110,10 +2526,10 @@ routine explicitly with C<.()> this is false.  However, it is defined
 to be true for any block entered using dispatcher-level primitives
 such as C<.callwith>, C<.callsame>, C<.nextwith>, or C<.nextsame>.
 
-The C<.my> method provides access to the lexical namespace in effect at
-the given dynamic context's current position.  It may be used to look
+The C<.my> method provides access to the lexical namespace associated with
+the given call frame's current position.  It may be used to look
 up ordinary lexical variables in that lexical scope.  It must not be
-used to change any lexical variable that is not marked as C<< context<rw> >>.
+used to change any lexical variable that is marked as readonly.
 
 The C<.hints> method gives access to a snapshot of compiler symbols in
 effect at the point of the call when the call was originally compiled.
@@ -2124,43 +2540,21 @@ object that is nevertheless mutable.
 
 =head2 The C<want> function
 
-The C<want> function returns a C<Signature> object that contains
-information about the context in which the current block, closure,
-or subroutine was called.  The C<want> function is really just
-short for C<caller.want>.  (Note that this is what your current
-routine's caller wants from your routine, not necessarily the same as
-C<context.want> when you are embedded in a block within a subroutine.
-Use C<context.want> if that's what you want.)
+The C<want> function is gone. If you want context specific behavior,
+return an object instead that responds accordingly to the various contextual
+methods.
 
-As with normal function signatures, you can test the result of C<want> with a
-smart match (C<~~>) or a C<when>:
+(Conjecture: in future we might want to provide some syntactic sugar that
+makes it easier to create such objects. Or maybe a type that takes values
+or code references for the various contexts, so that you can write
 
-   given want {
-        when :($)       {...}   # called in item context
-        when :(*@)      {...}   # called in list context
-        when :($ is rw) {...}   # expected to return an lvalue
-        when :($,$)     {...}   # expected to return two values
-        ...
-    }
+   return ContextProxy.new:
+        Int   => 3,
+        item  => { @.list.join(', ') },
+        list  => { ...               },
+        ;
 
-Or use its shorthand methods to reduce line noise:
-
-    if    want.item      {...}  # called in non-lvalue item context
-    elsif want.list      {...}  # called in list context
-    elsif want.void      {...}  # called in void context
-    elsif want.rw        {...}  # expected to return an lvalue
-
-The C<.arity> and C<.count> methods also work here:
-
-    if want.arity > 2    {...}  # must return more than two values
-    if want.count > 2    {...}  # can return more than two values
-
-Their difference is that C<.arity> considers only mandatory parts,
-while C<.count> considers also optional ones, including C<*$>:
-
-    ($x, $y) = f();     # Within &f, want === :(*$?, *$?, *@)
-                        #            want.arity === 0
-                        #            want.count === 2
+or something similar.)
 
 =head2 The C<leave> function
 
@@ -2185,18 +2579,18 @@ instead.  (It can be taken to mean either "go away from" or "bequeath
 to your successor" as appropriate.)  The object specifies the scope to exit,
 and the method's arguments specify the return value.  If the object
 is omitted (by use of the function or listop forms), the innermost
-block is exited.  Otherwise you must use something like C<context>
-or C<&?BLOCK> or a contextual variable to specify the scope you
+block is exited.  Otherwise you must use something like C<callframe>
+or C<&?BLOCK> or a dynamic variable to specify the scope you
 want to exit.  A label (such as a loop label) previously seen in
-the lexical scope also works as a kind of singleton context object:
+the lexical scope also works as a kind of singleton dynamic object:
 it names a statement that is serving both as an outer lexical scope
-and as a context in the current dynamic scope.
+and as a frame in the current dynamic scope.
 
 As with C<return>, the arguments are taken to be a C<Capture> holding the
 return values.
 
     leave;                      # return from innermost block of any kind
-    context(Method).leave;      # return from innermost calling method
+    callframe(Method).leave;    # return from innermost calling method
     &?ROUTINE.leave(1,2,3);     # Return from current sub. Same as: return 1,2,3
     &?ROUTINE.leave <== 1,2,3;  # same thing, force return as feed
     OUTER.leave;                # Return from OUTER label in lexical scope
@@ -2295,7 +2689,7 @@ change would be happen before C<temp> got control.
 Hypothetical variables use the same mechanism, except that the restoring
 closure is called only on failure.
 
-Note that contextual variables may be a better solution than temporized
+Note that dynamic variables may be a better solution than temporized
 globals in the face of multithreading.
 
 =head2 Wrapping
@@ -2313,6 +2707,10 @@ original routine, but do not introduce an official C<CALLER> frame:
 The C<callwith> function lets you pass your own arguments to the wrapped
 function.  The C<callsame> function takes no argument; it
 implicitly passes the original argument list through unchanged.
+The C<callsame> and C<nextsame> functions are really short for:
+
+    callwith( |callframe(Routine).args )
+    nextwith( |callframe(Routine).args )
 
 The call to C<.wrap> replaces the original C<Routine>'s C<do> property with the C<Callable>
 argument, and arranges that any call to C<callsame>, C<callwith>,
@@ -2388,11 +2786,77 @@ list.  Although not necessarily related by a class hierarchy, such
 later candidates are considered more generic and hence likelier
 to be able to handle various unforeseen conditions (perhaps).
 
+Note that all routines are (by default) considered to be candidates
+for inlining and constant folding.  The optimizer is allowed to start
+making these optimizations after the main program's C<CHECK> time,
+but not before.  After any routine is "hard" inlined or constant
+folded, it is explicitly retyped as immutable; any attempt to
+wrap an immutable routine will result in failure of the wrap call.
+An immutable routine is so marked by recasting to type C<HardRoutine>,
+a subclass of C<Routine>.
+
+On the other hand, it is also possible to explicitly mark a routine
+as mutable, and then the ability to wrap it must be preserved even
+after C<CHECK> time.  This is done by recasting to C<SoftRoutine>.
+Explicitly marking a routine as either mutable or immutable should
+be considered permanent.  It is still possible to inline soft
+routines, but only if the possibility of indirection is detected
+inline as well, and provision made (either inline or via external
+rewriting) for dealing with any wrappers.
+
+Hence, any routine marked as soft before C<CHECK> time is exempt
+from hard inlining or folding.  There are several methods of
+marking a routine as soft, however no method is provided for marking
+routines as hard, since that is the job of the optimizer.
+A routine may be marked as soft:
+
+=over
+
+=item *
+
+if it is declared using "our" explicitly
+
+=item *
+
+if it is mentioned in the argument list of a C<use soft> pragma,
+
+=item *
+
+if its name matches any wildcard pattern (TBD) in a C<use soft>,
+
+=item *
+
+if the module or class in which it is defined is mentioned in a C<use soft>,
+
+=item *
+
+or if there is a general C<use soft *;> declaration, which basically
+turns on AOP for everything at run time.  Be aware that this may turn
+your optimizer into more of a "pessimizer".
+
+=back
+
+For any normal standalone application, any C<use soft> pragma applies
+to the entire program in which it participates, provided it is
+performed before C<CHECK> time.  The optimizer may then harden
+anything that was not requested to remain soft.
+
+A plug-in system, such as for a web server, may choose either to allow
+individual plug-ins to behave as independent programs by letting the
+optimizer harden individual plug-ins independently, or treat all
+plug-ins as a part of the same program by softening all plug-ins.
+(Similar considerations apply to optimizing classes to closed/final.)
+
+Note that installing a wrapper before C<CHECK> time is specifically
+I<not> one of the ways to mark a routine as soft.  Such a routine
+may still be hardened at C<CHECK> time despite being wrapped during
+compile time.
+
 =head2 The C<&?ROUTINE> object
 
 C<&?ROUTINE> is always an alias for the lexically innermost C<Routine>
 (which may be a C<Sub>, C<Method>, or C<Submethod>), so you can specify
-tail-recursion on an anonymous sub:
+recursion on an anonymous sub:
 
     my $anonfactorial = sub (Int $n) {
                             return 1 if $n<2;
@@ -2403,13 +2867,13 @@ You can get the current routine name by calling C<&?ROUTINE.name>.
 Outside of any sub declaration, this call returns failure.
 
 Note that C<&?ROUTINE> refers to the current single sub, even if it is
-declared "multi".  To redispatch to the entire suite under a given short
-name, just use the named form, since there are no anonymous multis.
+declared C<multi>.  To redispatch to the entire suite under a given short
+name, just use the named form to call the C<proto>, since there are no anonymous C<multi>s.
 
 =head2 The C<&?BLOCK> object
 
 C<&?BLOCK> is always an alias for the current block, so you can
-specify tail-recursion on an anonymous block:
+specify recursion on an anonymous block:
 
     my $anonfactorial = -> Int $n { $n < 2
                                         ?? 1
@@ -2460,8 +2924,8 @@ module's subroutines/methods/etc. simultaneously:
 
 This special form should generally be restricted to named parameters.
 
-To curry a particular multi variant, it may be necessary to specify the type
-for one or more of its parameters:
+To curry a particular C<multi> variant, it may be necessary to specify the type
+for one or more of its parameters to pick out a single function:
 
     &woof ::= &bark:(Dog).assuming :pitch<low>;
     &pine ::= &bark:(Tree).assuming :pitch<yes>;
@@ -2553,15 +3017,15 @@ macro's lexical scope:
 
     require COMPILING <$x $y $z>;
 
-Note that you need to use the run-time C<:=> and C<require> forms, not C<::=>
-and C<use>, because the macro caller's compile-time is the macro's runtime.
+Note that you need to use the run-time C<require> form, not
+C<use>, because the macro caller's compile-time is the macro's runtime.
 
 =head2 Splicing
 
 Bare AST variables (such as the arguments to the macro) may not be
 spliced directly into a quasiquote because they would be taken as
 normal bindings.  Likewise, program text strings to be inserted need
-to be specially marked or they will be bound normally.  To insert a
+to be specially marked or they will be bound normally.  To insert an
 "unquoted" expression of either type within a quasiquote, use the
 quasiquote delimiter tripled, typically a bracketing quote of some sort:
 
@@ -2690,13 +3154,13 @@ namespace.  Or maybe it's the other way around...
 
 C<< CALLER::<$varname> >> specifies the C<$varname> visible in
 the dynamic scope from which the current block/closure/subroutine
-was called, provided that variable is declared with the "C<is context>"
-trait.  (Implicit lexicals such as C<$_> are automatically
-assumed to be contextual.)
+was called, provided that variable carries the "C<dynamic>"
+trait.  (All variables with a C<*> twigil are automatically marked with the trait.
+Likewise certain implicit lexicals (C<$_>, C<$/>, and C<$!>) are so marked.)
 
-C<< CONTEXT::<$varname> >> specifies the C<$varname> visible in the
-innermost dynamic scope that declares the variable with the "C<is context>"
-trait.
+C<< DYNAMIC::<$varname> >> specifies the C<$varname> visible in the
+innermost dynamic scope that declares the variable with the "C<is dynamic>"
+trait or with a name that has the C<*> twigil.
 
 C<< MY::<$varname> >> specifies the lexical C<$varname> declared in the current
 lexical scope.
@@ -2748,7 +3212,8 @@ or the slurpy array:
         for @filenames { ... }
     }
 
-If C<MAIN> is declared as a set of multi subs, MMD dispatch is performed.
+If C<MAIN> is declared as a C<proto> with a set of C<multi> subs,
+multi dispatch is performed by the C<proto>.
 
 As with module and class declarations, a sub declaration
 ending in semicolon is allowed at the outermost file scope if it is the
@@ -2759,16 +3224,20 @@ first such declaration, in which case the rest of the file is the body:
 
 This form is allowed only for simple subs named C<MAIN> that are intended
 to be run from the command line.
-Proto or multi definitions may not be written in semicolon form,
-nor may C<MAIN> subs within a module or class.  (A C<MAIN> routine
+A C<proto> or C<multi> definition may not be written in semicolon form,
+nor may C<MAIN> subs within a module or class be written in semicolon form.  (A C<MAIN> routine
 is allowed in a module or class, but is not usually invoked unless
 the file is run directly (see a above).  This corresponds to the
 "unless caller" idiom of Perl 5.)  In general, you may have only one
 semicolon-style declaration that controls the whole file.
 
 If an attempted dispatch to C<MAIN> fails, the C<USAGE> routine is called.
-If there is no C<USAGE> routine, a default message is printed.  This
-usage message is automatically generated from the signature (or
+If there is no C<USAGE> routine, a default message is printed to standard
+error. If the C<MAIN> routine does not declare a named parameter C<:$help>,
+and C<--help> is passed as a command line argument to the program, the usage
+message is printed to standard output instead.
+
+This usage message is automatically generated from the signature (or
 signatures) of C<MAIN>.  This message is generated at compile time,
 and hence is available at any later time as C<$?USAGE>.
 
@@ -2854,11 +3323,12 @@ parameters, just as any C<Match> object would.  Of course, in this example,
 there's no particular reason the sub has to be named C<MAIN>.
 
 To give both a long and a short switch name, you may use the pair
-notation.  The key will be considered the short switch name, while
-the variable name will be considered the long switch name.  So if
-the previous declaration had been:
+notation to install several names for the same parameter.
+If any of the names is a single character, it will be considered a
+short switch name, while all other parameters names are considered
+as long switch name.  So if the previous declaration had been:
 
-    sub MAIN (:f($frompart), :t($topart), *@rest)
+    sub MAIN (:f(:$frompart), :t(:$topart), *@rest)
 
 then you could invoke the program with either C<-f> or C<--frompart>
 to specify the first parameter.  Likewise you could use either C<-t>
@@ -2875,55 +3345,96 @@ There may also be an implicit C<MAIN> routine supplied by the setting
 of the current compilation unit.  (The C<-n> and C<-p> command-line
 switches are implemented this way.)  In this case the user's mainline
 code is not automatically executed; instead, execution is controlled
-by the setting's C<MAIN> routine.  That routine calls C<YOU_ARE_HERE>
+by the setting's C<MAIN> routine.  That routine calls C<{YOU_ARE_HERE}>
 at the point where the user's code is to be lexically inserted (in
-the abstract).  A setting may also call C<YOU_ARE_HERE> outside of
+the abstract).  A setting may also call C<{YOU_ARE_HERE}> outside of
 a C<MAIN> routine, in which case it functions as a normal setting,
-and the C<YOU_ARE_HERE> merely indicates where the user's code
+and the C<{YOU_ARE_HERE}> merely indicates where the user's code
 goes logically.  (Or from the compiler's point of view, which the
 lexical scope to dump a snapshot of for later use by the compiler
 as the setting for a different compilation unit.)  In this case the
 execution of the user code proceeds as normal.  In fact, the C<CORE>
-setting ends with a C<YOU_ARE_HERE> to dump the C<CORE> lexical
+setting ends with a C<{YOU_ARE_HERE}> to dump the C<CORE> lexical
 scope as the standard setting.  In this sense, C<CORE> functions as
 an ordinary prelude.
 
 If a C<MAIN> routine is declared both in the setting and in the
 user's code, the setting's C<MAIN> functions as the actual mainline
 entry point.  The user's C<MAIN> functions in an embedded fashion;
-the setting's invocation of C<YOU_ARE_HERE> functions as the main
+the setting's invocation of C<{YOU_ARE_HERE}> functions as the main
 invocation from the point of view of the user's code, and the
 user's C<MAIN> routine will be invoked at the end of each call to
-C<YOU_ARE_HERE>.
+C<{YOU_ARE_HERE}>.
 
 =head2 Implementation note on autothreading of only subs
 
-The natural way to implement autothreading for multi subs is to
+The natural way to implement autothreading for C<multi> subs is to
 simply have the junctional signatures (the ones that can accept
-C<Object>s or junctions as well as C<Any> parameters) match more loosely than
+C<Mu> or junction as well as C<Any> parameters) match more loosely than
 the non-autothreading versions, and let multiple dispatch find the
 appropriate sub based on the signature.  Those generic routines
 then end up redispatching to the more specific ones.
 
-On the other hand, the natural implementation of only subs is to
+On the other hand, the natural implementation of C<only> subs is to
 call the sub in question directly for efficiency (and maybe even
 inline it in some cases).  That efficiency is, after all, the main
-reason for not just making all subs multi.  However, this direct
+reason for not just making all subs C<multi>.  However, this direct
 call conflicts with the desire to allow autothreading.  It might
 be tempting to simply make everything multi dispatch underneath,
-and then say that the "only" declaration merely means that you get
+and then say that the C<only> declaration merely means that you get
 an error if you redeclare.  And maybe that is a valid approach if
 the multiple dispatch mechanism is fast enough.
 
 However, a direct call still needs to bind its arguments to its
 parameters correctly, and it has to handle the case of failure to
 bind somehow.  So it is also possible to implement autothreading
-of only subs based on failover from the binding failure.  This could
-either be a one-shot failover followed by a conversion to a multi call,
+of C<only> subs based on failover from the binding failure.  This could
+either be a one-shot failover followed by a conversion to a C<multi> call,
 or it could failover every time you try to autothread. If we assume
 that junctional processing is likely to be fairly heavyweight most of
 the time compared to the cost of failing to bind, that tends to argue
 for failing over every time.  This is also more conducive to inlining,
-since it's difficult to rewrite inlined calls.
+since it's difficult to rewrite inlined calls.  In any case, nowadays
+a C<proto> declaration is considered to be a kind of C<only> sub, 
+and needs to handle autothreading similaraly if the signature of
+the C<proto> excludes junctions.
+
+=head2 Introspection
+
+This section describes the methods implemented by the routine objects
+that allow introspection of the inner works of that routine.
+
+=head3 Routine
+
+=over
+
+=item .candidates
+
+This method returns a (potentially lazy) list of the candidates associated with the current
+routine. An "only" routine should return a list with itself as the
+single item.
+
+=item .signature
+
+This method returns the signature of the current routine.
+
+=item .cando(\$capture)
+
+This method returns a (potentially lazy) list of the candidates that match the given
+capture, ordered by goodness of match, with the best match first.
+
+=item .push($candidate)
+
+Adds C<$candidate> to the list of candidates for this C<proto>, calling this
+method in an C<only> routine should result in a failure. It is also
+accepted for C<multi>s declared in the source code to finalize the list
+of candidates and also return a failure here. But C<Proto>s created by
+calling C<Proto.new()> should be able add candidates at run-time.
+
+=back
+
+=head3 Signature
+
+See section L</Signature Introspection>.
 
 =for vim:set expandtab sw=4:

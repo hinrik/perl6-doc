@@ -16,14 +16,14 @@ DRAFT: Synopsis 17: Processes and Concurrency
 
     Created: 13 Jun 2005
 
-    Last Modified: 27 Feb 2009
-    Version: 4
+    Last Modified: 10 Jul 2010
+    Version: 5
 
 This draft document is a paste together from various sources.  The bulk of it is simply
 the old S17-concurrency.pod, which dealt only with concurrency.  Signals were added from
 S16-io, but haven't been merged with the conflicting S17 signals doco.  An event loop
 section has been added here because a) Larry mentioned the idea, and b) Moritz suggested
-that http://www.seas.upenn.edu/~lipeng/homepage/unify.html be our model for concurrency,
+that L<http://www.seas.upenn.edu/~lipeng/homepage/unify.html> be our model for concurrency,
 and in that model, an event loop underlies the threads.
 
 =head1 Overview
@@ -105,7 +105,7 @@ Each of these has a default action as well.  The possible actions are:
 
  Term   Default action is to terminate the process.
 
- Ign    Default action is to ignore the signal ($signal.exception is undef by default)
+ Ign    Default action is to ignore the signal ($signal.exception is undefined by default)
 
  Core   Default action is to terminate the process and dump core (see core(5)).
 
@@ -157,7 +157,7 @@ The exceptions are:
 See L<S04-control> for details on how to handle exceptions.
 
 XXX I'm unsure how the actions in the table above can be made to make sense.  The Ign
-actions are already dealt with because %SIG{CHLD}.exception already defaults to undef.
+actions are already dealt with because %SIG{CHLD}.exception already defaults to undefined.
 The Term action will probably be self-solving (ie. will terminate the process).  The
 others I'm just plain unsure about.  XXX
 
@@ -188,7 +188,7 @@ One can set up multiple alarms using repeated alarm calls:
         my $a2 = alarm(2);
         sleep 10;
         CATCH {
-            is critical; # if you don't want $a2 to be raised inside this
+            also is critical; # if you don't want $a2 to be raised inside this
             when Sig::ALARM { ... }
         }
     }
@@ -198,7 +198,7 @@ To stop an alarm, call C<$alarm.stop>.  The C<alarms> method for Conc objects
 for that concurrent context.
 
 When an alarm object is garbage collected, the alarm is stopped automatically.
-Under void context, the implicit alarm object can only be stopped by querying
+Within sink (void) context, the implicit alarm object can only be stopped by querying
 C<.alarms> on the current process.
 
 We are not sure what C<alarm(0)> would mean.  Probably a deprecation warning?
@@ -406,7 +406,7 @@ uninterruptability, you could use the "is critical" trait.
  }
 
  if ($update) {
-     is critical;
+     also is critical;
      # code accessing external info, not to be interrupted
  }
 
@@ -478,7 +478,7 @@ end time
 suspended (not diff from block on wakeup signal)
 waiting on a handle, a condition, a lock, et cetera
 otherwise returns false for running threads
-if it's finished then it's undef(?)
+if it's finished then it's Nil
 
 =item current_continuation
 
@@ -566,7 +566,7 @@ revive a thread; fail if already running
 survives parent thread demise (promoted to process)
 process-local changes no longer affects parent
 tentatively, the control methods still applies to it
-including wait (which will always return undef)
+including wait (which will always return Nil)
 also needs to discard any atomicity context
 
 =item "is throttled" trait
@@ -609,15 +609,15 @@ Live in userland for the time being.
     module Blah;
     {
 
-        is atomic;   # contend/maybe/whatever other rollback stuff
-                     # limitation: no external IO (without lethal warnings anyway)
-                     # can't do anything irreversible
+        also is atomic;   # contend/maybe/whatever other rollback stuff
+                          # limitation: no external IO (without lethal warnings anyway)
+                          # can't do anything irreversible
 
-        is critical; # free to do anything irreversible
-                     # means "don't interrupt me"
-                     # in system with critical section, no interrupts from
-                     # other threads will happen during execution
-                     # you can't suspend me
+        also is critical; # free to do anything irreversible
+                          # means "don't interrupt me"
+                          # in system with critical section, no interrupts from
+                          # other threads will happen during execution
+                          # you can't suspend me
 
         my $boo is export;
         $boo = 1;

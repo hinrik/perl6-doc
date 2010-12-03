@@ -14,8 +14,8 @@ DRAFT: Synopsis 19: Command Line Interface
 
     Created: 12 Dec 2008
 
-    Last Modified: 13 Feb 2009
-    Version: 25
+    Last Modified: 26 Oct 2009
+    Version: 26
 
 This is a draft document. This document describes the command line interface.
 It has changed extensively from previous versions of Perl in order to increase
@@ -291,7 +291,7 @@ the delimiters are treated as values.
 
 =item *
 
-Eager matching semantics are used, so the first closing delimeter found
+Eager matching semantics are used, so the first closing delimiter found
 completes the match.
 
 =item *
@@ -302,7 +302,7 @@ like a closing HTML tag.
 
 =back
 
-These options are made available in context variables matching their name,
+These options are made available in dynamic variables matching their name,
 and are invisible to C<MAIN()> except as C<< %*OPTS<name> >>.  For example:
 
   ++PARSER --setting=Perl6-autoloop-no-print ++/PARSER
@@ -380,7 +380,7 @@ Perl 6 options, descriptions, and services.
          :u($use),
     Bool :v($version),
     Bool :V($verbose-config),
-    Bool :X($extract-from-text),
+    Bool :x($extract-from-text),
   );
 
 =head2 Reference
@@ -516,7 +516,7 @@ Desugars to C<--PARSER --Perl6-extract-from-text --/PARSER>.
 
 Metasyntactic options are a subset of delimited options used to pass arguments
 to an underlying component of Perl. Perl itself does not parse these options,
-but makes them available to run-time components via the C<%*META-ARGS> context
+but makes them available to run-time components via the C<%*META-ARGS> dynamic
 variable.
 
 Standard in Perl 6 are three underlying components, C<CMD>, C<PARSER>,

@@ -9,7 +9,6 @@ DRAFT: Synopsis 32: Setting Library - Rules
 
     Tim Nelson <wayland@wayland.id.au>
     Larry Wall <larry@wall.org>
-    Tim Nelson <wayland@wayland.id.au>
 
 =head1 VERSION
 
@@ -20,9 +19,10 @@ DRAFT: Synopsis 32: Setting Library - Rules
 
 The document is a draft.
 
-If you read the HTML version, it is generated from the pod in the pugs
-repository under /docs/Perl6/Spec/S32-setting-library/Exception.pod so edit it there in
-the SVN repository if you would like to make changes.
+If you read the HTML version, it is generated from the Pod in the specs
+repository under
+L<https://github.com/perl6/specs/blob/master/S32-setting-library/Rules.pod>
+so edit it there in the git repository if you would like to make changes.
 
 =head1 Roles
 
@@ -32,12 +32,19 @@ the SVN repository if you would like to make changes.
 
 =head2 Match
 
-    role Match {
-        method Int from()  {...}
-        method Int to()    {...}
-        method Int chars() {...}
-        method     orig()  {...}
-        method     Str()   {...}
+    role Match does Positional does Associative {
+        method Int from()   {...}
+        method Int to()     {...}
+        method Int chars()  {...}
+        method     orig()   {...}
+        method     ast()    {...}
+        method     caps()   {...}
+        method     chunks() {...}
+        method     pos()    {...}
+
+        method     bool()   {...}
+        method     Str()    {...}
+        method     Num()    {...}
     }
 
 =head2 Cursor
@@ -55,6 +62,3 @@ See Abstractions.pod
 
 Please post errors and feedback to perl6-language.  If you are making
 a general laundry list, please separate messages by topic.
-
-
-

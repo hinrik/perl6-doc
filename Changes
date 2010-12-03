@@ -2,6 +2,7 @@
     - Use Dist::Zilla
     - Fix Perl 6 tablet hyperlink link and some other stuff pointed out
       by Herbert Breunung
+    - Update the Perl 6 tablets to the latest version
 
 0.45 Mon Aug 17 17:12:06 GMT 2009
     - Added perlobjintro and perlreintro

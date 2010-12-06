@@ -1,4 +1,5 @@
 {{$NEXT}}
+    - Convert S26-documentation.pod to UTF-8
 
 0.46  Fri Dec 3 07:15:01 GMT 2010
     - Use Dist::Zilla
